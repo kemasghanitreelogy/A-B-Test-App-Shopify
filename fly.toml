@@ -1,0 +1,31 @@
+app = "treelogy-ab"
+# Singapore: region Fly.io terdekat dari Indonesia (~30-50ms dari Jakarta)
+primary_region = "sin"
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  SHOPIFY_APP_URL = "https://treelogy-ab.fly.dev"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  # WAJIB 1: endpoint app proxy dipanggil dari storefront, cold start = event exposure hilang
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[deploy]
+  release_command = "npx prisma migrate deploy"

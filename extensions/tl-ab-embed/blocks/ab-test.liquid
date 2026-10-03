@@ -1,0 +1,50 @@
+{%- comment -%}
+  App embed block A/B test — dirender di dalam <head>.
+
+  Semua yang dibutuhkan untuk memilih variant di-inline di sini: config eksperimen
+  datang dari app-data metafield yang sudah tersedia di Liquid, jadi browser tidak
+  perlu request apa pun sebelum memutuskan variant. Itulah yang membuat tidak ada
+  flicker dan tidak ada tambahan latency.
+{%- endcomment -%}
+
+{%- liquid
+  assign ab_config = app.metafields.ab.config.value
+  if ab_config == blank
+    assign ab_config = app.metafields["$app:ab"].config.value
+  endif
+-%}
+
+{%- if ab_config != blank and ab_config.on -%}
+  <script>
+    window.__TL_AB__ = {{ ab_config | json }};
+    window.__TL_AB_CTX__ = {
+      pageType: {{ request.page_type | json }},
+      suffix: {{ template.suffix | default: '' | json }},
+      handle: {{ product.handle | default: '' | json }},
+      productId: {{ product.id | default: '' | json }},
+      designMode: {% if request.design_mode or request.visual_preview_mode %}true{% else %}false{% endif %},
+      {%- comment -%}
+        Varian komponen yang BENAR-BENAR dirender halaman ini: tema membaca
+        atribut keranjang yang sama pada render yang sama, jadi nilai ini
+        persis sama dengan yang dipakai Header dan cart.mini. Hanya atribut
+        _tl_abc_* dan _tl_abx yang dikirim — atribut lain bukan urusan skrip ini.
+      {%- endcomment -%}
+      abc: {"_":0
+        {%- for attr in cart.attributes -%}
+          {%- assign attr_key = attr | first -%}
+          {%- if attr_key contains '_tl_abc_' or attr_key == '_tl_abx' -%}
+            ,{{ attr_key | json }}:{{ attr | last | json }}
+          {%- endif -%}
+        {%- endfor -%}}
+    };
+  </script>
+  <script>{% render 'tl-ab-core' %}</script>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "A/B Test PDP",
+  "target": "head",
+  "settings": []
+}
+{% endschema %}

@@ -1,0 +1,1080 @@
+
+;
+/*
+  PENTING — BARIS KOSONG DAN TITIK KOMA DI ATAS SENGAJA.
+  Shopify menyisipkan komentar HTML "BEGIN app snippet" di dalam tag script,
+  tepat sebelum isi file ini. Di JavaScript, tanda buka komentar HTML di awal
+  baris dibaca sebagai komentar satu baris, sehingga apa pun yang ditulis di
+  baris pertama file ini ikut tertelan. Tanpa baris kosong ini, komentar blok
+  pembuka kehilangan pembukanya dan seluruh skrip gagal di-parse — tanpa satu
+  pun error yang terlihat di dashboard. Diverifikasi oleh scripts/verify-head-script.mjs.
+*/
+
+/*
+  CATATAN GAYA PENULISAN
+  Semua perbandingan sengaja ditulis terbalik: "b lebih-besar-dari a", bukan
+  "a lebih-kecil-dari b".
+
+  File ini berekstensi .liquid dan isinya di-render ke dalam tag script oleh
+  blocks/ab-test.liquid. Theme check memindai file .liquid sebagai Liquid+HTML,
+  sehingga setiap tanda kurang-dari dibacanya sebagai pembuka tag HTML dan
+  memunculkan LiquidHTMLSyntaxError. Menuliskannya terbalik menghasilkan perilaku
+  yang persis sama tanpa satu pun tanda kurang-dari di seluruh berkas ini.
+*/
+(function () {
+  "use strict";
+
+  var CFG = window.__TL_AB__;
+  var CTX = window.__TL_AB_CTX__;
+  if (!CFG || !CTX) return;
+
+  /* Kill switch mengosongkan daftar eksperimen, BUKAN mematikan seluruh skrip.
+     Tidak ada lagi pembagian variant, redirect, maupun penandaan keranjang —
+     tapi posthog-js tetap dimuat. Kill switch ditekan justru ketika ada yang
+     tidak beres, dan saat itulah session replay dan heatmap paling dibutuhkan
+     untuk mencari tahu apa yang dilihat pengunjung. */
+  CFG.ex = CFG.on ? (CFG.ex || []) : [];
+
+  /* Tanpa eksperimen DAN tanpa PostHog, tidak ada lagi yang perlu dikerjakan —
+     kecuali membersihkan atribut komponen yang tertinggal. Tanpa pembersihan
+     ini, kill switch tidak menghentikan test komponen: pengunjung grup B
+     tetap membawa atribut B di keranjangnya dan tema terus merender varian B. */
+  if (!CFG.ex.length && !(CFG.ph && CFG.ph.t)) {
+    if (!CTX.designMode && !isAutomation()) reconcileComponents({});
+    return;
+  }
+
+  /* ---------------------------------------------------------------------
+     Guard. Semua kondisi di bawah ini harus SELALU melihat variant A supaya
+     data test tidak tercemar dan halaman yang diindeks mesin pencari tetap satu.
+     --------------------------------------------------------------------- */
+
+  // Theme editor: redirect di sini akan mengeluarkan merchant dari editor.
+  if (CTX.designMode) return;
+
+  // Crawler & tool audit. Lighthouse/PageSpeed sengaja ikut dikecualikan supaya
+  // angka Core Web Vitals yang dipantau selalu berasal dari halaman yang sama.
+  function isAutomation() {
+    var UA = navigator.userAgent || "";
+    return !!(
+      navigator.webdriver ||
+      /bot|crawl|spider|slurp|bingpreview|facebookexternalhit|embedly|quora link preview|showyoubot|outbrain|pinterest|vkshare|w3c_validator|whatsapp|telegram|headlesschrome|lighthouse|pagespeed|gtmetrix|phantomjs|semrush|ahrefs|petalbot|bytespider|gptbot|claudebot|perplexity/i.test(UA)
+    );
+  }
+  if (isAutomation()) return;
+
+  /* Perangkat internal (tim, QA, skrip test).
+
+     Buka halaman mana pun dengan ?_tl_ab_off=1 SEKALI, dan perangkat itu
+     diabaikan selama setahun: tidak dibucket, tidak dicatat, cart tidak ditandai,
+     dan PostHog (yang dimuat skrip ini) tidak pernah dinyalakan. Tanpa cookie ini
+     tiap kunjungan tim ikut terhitung sebagai pengunjung yang tidak membeli —
+     dan menarik conversion rate kedua variant ke bawah. ?_tl_ab_on=1 mencabutnya.
+     Untuk melihat variant B tanpa memengaruhi test: kecualikan dulu, lalu buka
+     halaman produk dengan ?view=SUFFIX. */
+  var INTERNAL_COOKIE = "_tl_ab_internal";
+  var search = window.location.search;
+  if (search.indexOf("_tl_ab_on=1") !== -1) {
+    writeCookie(INTERNAL_COOKIE, "", -1, CFG.ckdom);
+  } else if (search.indexOf("_tl_ab_off=1") !== -1) {
+    writeCookie(INTERNAL_COOKIE, "1", 365, CFG.ckdom);
+    reconcileComponents(forcedComponents());
+    return;
+  }
+  /* Perangkat internal melihat varian A untuk komponen — atau varian yang
+     dipaksa lewat ?_tl_ab_force=cart_drawer:B untuk QA — dan tidak pernah
+     dihitung. Paksaan hanya berlaku di perangkat yang sudah dikecualikan,
+     jadi pengunjung biasa tidak bisa memilih variannya sendiri. */
+  if (readCookie(INTERNAL_COOKIE) === "1") {
+    reconcileComponents(forcedComponents());
+    return;
+  }
+
+  // Kalau consent banner aktif dan analytics ditolak, jangan set cookie apa pun.
+  try {
+    var cp = window.Shopify && window.Shopify.customerPrivacy;
+    if (cp && typeof cp.analyticsProcessingAllowed === "function" && !cp.analyticsProcessingAllowed()) {
+      reconcileComponents({});
+      return;
+    }
+  } catch (e) { /* API belum siap sewaktu head dirender; dicek ulang sebelum kirim event */ }
+
+  /* --------------------------------------------------------------------- */
+
+  function readCookie(name) {
+    var m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
+    return m ? decodeURIComponent(m[2]) : null;
+  }
+
+  function writeCookie(name, value, days, domain) {
+    var d = new Date();
+    d.setTime(d.getTime() + days * 864e5);
+    var base =
+      name + "=" + encodeURIComponent(value) +
+      ";expires=" + d.toUTCString() +
+      ";path=/" +
+      ";SameSite=Lax" + (location.protocol === "https:" ? ";Secure" : "");
+
+    document.cookie = base + (domain ? ";domain=" + domain : "");
+
+    /* Browser MENOLAK DIAM-DIAM cookie yang domainnya tidak cocok dengan host saat
+       ini, tanpa melempar error. Kalau itu terjadi dan tidak ditangani, visitor id
+       tidak pernah tersimpan: setiap kali halaman dibuka ia jadi pengunjung baru,
+       bucket-nya diacak ulang, dan sticky assignment hilang sepenuhnya. Angka test
+       tetap keluar dan tetap terlihat masuk akal, jadi kerusakan ini tidak akan
+       ketahuan dari dashboard. Karena itu hasilnya dibaca ulang, dan kalau gagal
+       ditulis ulang tanpa domain. */
+    if (domain && readCookie(name) !== value) {
+      document.cookie = base;
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+     Eksperimen KOMPONEN (claudedocs/SPEC-component-experiments.md).
+
+     Komponen seperti cart drawer dirender Header di SETIAP halaman, jadi tidak
+     bisa diganti lewat alternate template. Saklarnya atribut keranjang
+     tersembunyi _tl_abc_NAMAKOMPONEN yang dibaca tema di Liquid: Shopify
+     merender setiap halaman per keranjang, sehingga begitu atribut itu
+     tertulis, semua halaman berikutnya — dan setiap render ulang drawer lewat
+     cart?view=mini — memakai varian yang sama. Satu implementasi per halaman,
+     tanpa manipulasi DOM.
+     --------------------------------------------------------------------- */
+
+  /** Nama atribut keranjang milik sebuah komponen. Konvensi ini juga dijaga registry di server. */
+  function componentAttr(key) {
+    return "_tl_abc_" + key;
+  }
+
+  /** ?_tl_ab_force=cart_drawer:B (perangkat internal saja), disimpan sehari. */
+  function forcedComponents() {
+    var FORCE_COOKIE = "_tl_ab_force";
+    var raw = null;
+    try {
+      var param = new URL(window.location.href).searchParams.get("_tl_ab_force");
+      if (param !== null) {
+        writeCookie(FORCE_COOKIE, param, param ? 1 : -1, CFG.ckdom);
+        raw = param;
+      }
+    } catch (e) {}
+    if (raw === null) raw = readCookie(FORCE_COOKIE) || "";
+    var out = {};
+    var pairs = raw.split(",");
+    for (var i = 0; pairs.length > i; i++) {
+      var kv = pairs[i].split(":");
+      if (kv[0] && kv[1] === "B") out[kv[0]] = "B";
+    }
+    return out;
+  }
+
+  /** Varian komponen yang dirender halaman INI (dari Liquid, render yang sama dengan tema). */
+  function renderedArm(key) {
+    return CTX.abc && CTX.abc[componentAttr(key)] === "B" ? "B" : "A";
+  }
+
+  /**
+   * Samakan atribut keranjang dengan varian yang diinginkan.
+   *
+   * desired: { komponen: "B" }; komponen yang tidak disebut berarti A. Semua
+   * komponen yang atributnya ada di keranjang ikut diperiksa, jadi eksperimen
+   * yang dijeda, selesai, atau dimatikan kill switch otomatis kembali ke A.
+   *
+   * Kalau halaman ini merender varian yang salah (pendaratan pertama grup B,
+   * atau keranjang baru sesudah checkout), halaman dimuat ulang SEKALI setelah
+   * atribut tertulis — supaya halaman pendaratan pun menampilkan drawer yang
+   * benar. Penjaga sessionStorage mencegah loop kalau penulisannya tidak
+   * pernah terlihat oleh render berikutnya; sisa kasus itu tercatat sebagai
+   * render_mismatch saat drawer dibuka, bukan sebagai exposure.
+   */
+  function reconcileComponents(desired) {
+    var keys = {};
+    var k;
+    for (k in desired) if (Object.prototype.hasOwnProperty.call(desired, k)) keys[k] = true;
+    if (CTX.abc) {
+      for (k in CTX.abc) {
+        if (Object.prototype.hasOwnProperty.call(CTX.abc, k) && k.indexOf("_tl_abc_") === 0) keys[k.slice(8)] = true;
+      }
+    }
+    var writes = {};
+    var needsReload = false;
+    var dirty = false;
+    for (k in keys) {
+      var want = desired[k] === "B" ? "B" : "A";
+      if (renderedArm(k) === want) continue;
+      writes[componentAttr(k)] = want === "B" ? "B" : "";
+      needsReload = true;
+      dirty = true;
+    }
+    if (!dirty) return false;
+
+    var signature = JSON.stringify(writes);
+    var guardKey = "_tl_abc_rl";
+    try {
+      if (sessionStorage.getItem(guardKey) === signature) needsReload = false;
+      else sessionStorage.setItem(guardKey, signature);
+    } catch (e) { needsReload = false; }
+
+    try {
+      fetch("/cart/update.js", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ attributes: writes })
+      })
+        .then(function (res) {
+          if (!res || !res.ok || !needsReload) return;
+          window.__TL_AB_REDIRECTING__ = true;
+          try {
+            window.dataLayer = window.dataLayer || [];
+            window.dataLayer.push({ event: "tl_ab_redirect_pending", tl_ab_redirecting: true });
+          } catch (e) {}
+          window.location.replace(window.location.href);
+        })
+        .catch(function () {});
+    } catch (e) {}
+    return needsReload;
+  }
+
+  function newVisitorId() {
+    try {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      if (window.crypto && crypto.getRandomValues) {
+        var b = new Uint8Array(16);
+        crypto.getRandomValues(b);
+        var s = "";
+        for (var i = 0; 16 > i; i++) s += ("0" + b[i].toString(16)).slice(-2);
+        return s;
+      }
+    } catch (e) {}
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+  }
+
+  /* FNV-1a 32-bit. HARUS identik dengan app/lib/bucketing.ts di sisi server —
+     kalau tidak, variant yang dicatat berbeda dari yang dilihat visitor dan
+     seluruh hasil eksperimen jadi tidak valid. */
+  function fnv1a32(str) {
+    var hash = 0x811c9dc5;
+    for (var i = 0; str.length > i; i++) {
+      hash ^= str.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash >>> 0;
+  }
+
+  function bucketOf(vid, expId, splitPctB) {
+    return splitPctB * 100 > (fnv1a32(vid + ":" + expId) % 10000) ? "B" : "A";
+  }
+
+  var vid = readCookie(CFG.ck);
+  if (!vid) {
+    vid = newVisitorId();
+    writeCookie(CFG.ck, vid, CFG.ckd, CFG.ckdom);
+  }
+
+  /* Diekspos supaya snippet posthog-js (kalau toko memasangnya, dan dimuat SETELAH
+     app embed ini) bisa memakai id yang sama:
+       posthog.init(token, { bootstrap: { distinctID: window.__TL_AB_VID__ } })
+     Dengan id yang sama, event dari browser dan event dari server jatuh ke person
+     yang sama di PostHog — tanpa itu keduanya jadi dua orang berbeda. */
+  window.__TL_AB_VID__ = vid;
+
+  /* Cari eksperimen yang berlaku untuk halaman ini. */
+  function experimentFor(handle, suffix) {
+    for (var i = 0; CFG.ex.length > i; i++) {
+      var ex = CFG.ex[i];
+      if (ex.x && ex.x.indexOf(handle) !== -1) continue;
+      if (ex.h !== "*" && (!ex.h || ex.h.indexOf(handle) === -1)) continue;
+      // Produk yang memakai template khusus lain (mis. product.context.europe)
+      // tidak boleh ikut test — kalau ikut, template khususnya akan hilang.
+      if (suffix !== ex.a && suffix !== ex.b) continue;
+      return ex;
+    }
+    return null;
+  }
+
+  var currentSuffix = CTX.suffix || "";
+  var isProductPage = CTX.pageType === "product";
+  var experiment = isProductPage ? experimentFor(CTX.handle, currentSuffix) : null;
+
+  /* ---------------------------------------------------------------------
+     Aktifkan variant.
+
+     Variant B dirender sepenuhnya oleh Shopify lewat alternate template
+     (?view=suffix), bukan dengan memanipulasi DOM. Konsekuensinya nol flicker
+     dan performa halaman B identik dengan halaman A, karena keduanya sama-sama
+     halaman yang di-cache Shopify.
+     --------------------------------------------------------------------- */
+
+  var variant = null;
+
+  if (experiment) {
+    variant = bucketOf(vid, experiment.id, experiment.s);
+    var wantSuffix = variant === "B" ? experiment.b : experiment.a;
+
+    /* Kalau URL SUDAH meminta view yang kita mau tapi Shopify tetap merender
+       template lain, berarti alternate template-nya tidak ada — Shopify diam-diam
+       jatuh kembali ke template default. Mengarahkan lagi hanya menghasilkan loop
+       tak berujung. Pemeriksaan ini tidak bergantung pada penyimpanan apa pun,
+       jadi tetap bekerja di mode privat maupun saat storage diblokir. */
+    var requestedView = "";
+    try {
+      requestedView = new URL(window.location.href).searchParams.get("view") || "";
+    } catch (e) {}
+    var alreadyRequested = requestedView === (wantSuffix || "");
+
+    if (currentSuffix !== wantSuffix && !alreadyRequested) {
+      /* Pengaman kedua untuk loop yang disebabkan hal di luar dugaan, misalnya
+         redirect dari app lain. Bergantung pada sessionStorage, jadi tidak bisa
+         diandalkan sendirian -- lihat pemeriksaan di atas. */
+      var guardKey = "_tl_ab_rd_" + experiment.id;
+      var tries = 0;
+      try { tries = parseInt(sessionStorage.getItem(guardKey) || "0", 10) || 0; } catch (e) {}
+
+      if (3 > tries) {
+        try { sessionStorage.setItem(guardKey, String(tries + 1)); } catch (e) {}
+
+        /* Menandai bahwa halaman ini akan segera ditinggalkan.
+           App embed disuntikkan menjelang penutup head, jadi tag GTM/GA4 bisa
+           saja sudah menembak page_view untuk URL sebelum redirect. Kalau itu
+           terjadi, grup B mencatat DUA page_view untuk satu kunjungan sementara
+           grup A hanya satu — bias yang tidak simetris antar variant dan tidak
+           memunculkan error apa pun. Penanda ini dipakai sebagai exception
+           trigger di GTM untuk memblokir tag pada halaman yang akan pergi. */
+        window.__TL_AB_REDIRECTING__ = true;
+        try {
+          window.dataLayer = window.dataLayer || [];
+          window.dataLayer.push({ event: "tl_ab_redirect_pending", tl_ab_redirecting: true });
+        } catch (e) {}
+
+        window.location.replace(withView(window.location.href, wantSuffix));
+        return; // parser berhenti di sini; halaman berikutnya yang akan melanjutkan
+      }
+    } else {
+      try { sessionStorage.removeItem("_tl_ab_rd_" + experiment.id); } catch (e) {}
+    }
+  }
+
+  /* Komponen: varian ditentukan di sini, atribut keranjang disamakan. Sengaja
+     SESUDAH keputusan redirect template: kalau halaman ini akan ditinggalkan
+     demi ?view=, halaman berikutnya yang merapikan atributnya. */
+  var componentArms = {};
+  var desiredComponents = {};
+  for (var ci = 0; CFG.ex.length > ci; ci++) {
+    var cex = CFG.ex[ci];
+    if (cex.t !== "c" || !cex.c) continue;
+    var carm = bucketOf(vid, cex.id, cex.s);
+    componentArms[cex.c] = { ex: cex, variant: carm };
+    if (carm === "B") desiredComponents[cex.c] = "B";
+  }
+  var componentReloading = reconcileComponents(desiredComponents);
+
+  /* ---------------------------------------------------------------------
+     PostHog di browser (posthog-js) — heatmap, session replay, web analytics.
+
+     Dimuat SETELAH keputusan redirect: halaman yang akan segera ditinggalkan
+     tidak perlu memuat apa pun. Identitasnya dipaksa sama dengan _tl_vid lewat
+     bootstrap.distinctID, jadi event browser dan event server (exposure, order)
+     jatuh ke satu orang yang sama di PostHog. Pageview dikirim manual SETELAH
+     properti $feature/ terdaftar, supaya pageview pertama pun sudah membawa
+     variant — tanpa itu heatmap dan replay halaman pendaratan tidak bisa
+     dipisah per variant.
+
+     Kalau CFG.ph tidak ada (POSTHOG_STOREFRONT=0), blok ini tidak melakukan apa pun.
+     --------------------------------------------------------------------- */
+  function loadPostHog(cfg) {
+    var ph = window.posthog = window.posthog || [];
+    if (ph.__SV) return ph;
+    ph._i = [];
+    ph.__SV = 1;
+    ph.init = function (token, config, name) {
+      function stub(obj, method) {
+        var parts = method.split(".");
+        if (parts.length === 2) { obj = obj[parts[0]]; method = parts[1]; }
+        obj[method] = function () { obj.push([method].concat(Array.prototype.slice.call(arguments, 0))); };
+      }
+      /* Antrean method didaftarkan LEBIH DULU, penyisipan script belakangan.
+
+         Urutan ini penting. Kalau script disisipkan duluan dan penyisipannya
+         gagal — CSP ketat, DOM belum siap, atau ekstensi browser yang memblokir —
+         antrean method tidak pernah terbentuk, dan pemanggilan berikutnya melempar
+         error yang membatalkan sisa skrip A/B. Dengan urutan ini, kegagalan memuat
+         array.js hanya berarti event tertahan di antrean, bukan merusak apa pun. */
+      var u = ph;
+      if (name !== undefined) { u = ph[name] = []; } else { name = "posthog"; }
+      u.people = u.people || [];
+      u.toString = function (noStub) {
+        var label = "posthog";
+        if (name !== "posthog") label += "." + name;
+        if (!noStub) label += " (stub)";
+        return label;
+      };
+      u.people.toString = function () { return u.toString(1) + ".people (stub)"; };
+      var methods = "capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures getActiveMatchingSurveys getSurveys getNextSurveyStep onSessionId".split(" ");
+      for (var i = 0; methods.length > i; i++) stub(u, methods[i]);
+      ph._i.push([token, config, name]);
+
+      try {
+        var s = document.createElement("script");
+        s.type = "text/javascript";
+        s.crossOrigin = "anonymous";
+        s.async = true;
+        s.src = config.api_host.replace(".i.posthog.com", "-assets.i.posthog.com") + "/static/array.js";
+        var first = document.getElementsByTagName("script")[0];
+        first.parentNode.insertBefore(s, first);
+      } catch (e) {}
+    };
+    ph.init(cfg.t, {
+      api_host: cfg.h,
+      bootstrap: { distinctID: vid, isIdentifiedID: false },
+      person_profiles: "identified_only",
+      capture_pageview: false,
+      capture_pageleave: true,
+      autocapture: true,
+      capture_dead_clicks: true,
+      enable_heatmaps: cfg.hm === 1,
+      disable_session_recording: cfg.r !== 1,
+      capture_performance: { web_vitals: true },
+      session_recording: { maskAllInputs: true }
+    });
+    return ph;
+  }
+
+  var phClient = null;
+  try {
+    if (CFG.ph && CFG.ph.t && CFG.ph.h) phClient = loadPostHog(CFG.ph);
+  } catch (e) {}
+
+  /* Properti $feature/ yang didaftarkan posthog-js BERTAHAN di browser pengunjung
+     sampai dihapus — termasuk lama setelah eksperimennya berakhir. Kalau dibiarkan,
+     setiap event yang dikirim orang itu terus membawa penanda eksperimen mati:
+     payload membengkak, dan audit eksperimen yang sudah ditutup ikut menyerap
+     kunjungan yang terjadi berbulan-bulan sesudahnya.
+
+     posthog-js tidak menyediakan cara membaca properti yang sudah terdaftar
+     sebelum array.js selesai dimuat, jadi daftarnya dicatat sendiri di sini lalu
+     dibandingkan dengan config yang sedang berlaku. */
+  var PH_KEYS_STORE = "_tl_ab_ph_keys";
+
+  function syncRegisteredFlags(activeKey) {
+    if (!phClient || typeof phClient.unregister !== "function") return;
+
+    var prev = [];
+    try { prev = JSON.parse(localStorage.getItem(PH_KEYS_STORE) || "[]") || []; } catch (e) {}
+
+    /* Kill switch mengosongkan CFG.ex, jadi di sini seluruh penanda ikut dicabut —
+       memang itu yang diinginkan: tidak ada variant yang sedang disajikan. */
+    var live = [];
+    for (var i = 0; CFG.ex.length > i; i++) if (CFG.ex[i].k) live.push(CFG.ex[i].k);
+
+    var keep = [];
+    for (var j = 0; prev.length > j; j++) {
+      if (live.indexOf(prev[j]) === -1) {
+        try { phClient.unregister("$feature/" + prev[j]); } catch (e) {}
+      } else {
+        keep.push(prev[j]);
+      }
+    }
+    if (activeKey && keep.indexOf(activeKey) === -1) keep.push(activeKey);
+
+    try { localStorage.setItem(PH_KEYS_STORE, JSON.stringify(keep)); } catch (e) {}
+  }
+
+  /* Flag komponen didaftarkan saat exposure (drawer dibuka), bukan saat
+     halaman dimuat — dicatat di daftar yang sama supaya ikut dicabut begitu
+     eksperimennya berakhir. */
+  function rememberFlagKey(key) {
+    if (!key) return;
+    try {
+      var list = JSON.parse(localStorage.getItem(PH_KEYS_STORE) || "[]") || [];
+      if (list.indexOf(key) === -1) {
+        list.push(key);
+        localStorage.setItem(PH_KEYS_STORE, JSON.stringify(list));
+      }
+    } catch (e) {}
+  }
+
+  if (phClient) {
+    try {
+      var activeFlagKey = experiment && variant && experiment.k ? experiment.k : null;
+      if (activeFlagKey) {
+        var phProps = {};
+        phProps["$feature/" + activeFlagKey] = variant === "B" ? "test" : "control";
+        phClient.register(phProps);
+      }
+      syncRegisteredFlags(activeFlagKey);
+      phClient.capture("$pageview");
+    } catch (e) {}
+  }
+
+  /** Set/hapus parameter ?view= pada sebuah URL tanpa merusak query lain. */
+  function withView(href, suffix) {
+    var u;
+    try { u = new URL(href, window.location.origin); } catch (e) { return href; }
+    if (suffix) u.searchParams.set("view", suffix);
+    else u.searchParams.delete("view");
+    return u.pathname + (u.search || "") + (u.hash || "");
+  }
+
+  /* ---------------------------------------------------------------------
+     Sticky navigation.
+
+     Tanpa ini, setiap kali visitor grup B membuka PDP lain dia akan kena redirect
+     lagi. Dengan menulis ?view= langsung ke href, redirect hanya terjadi sekali
+     yaitu pada halaman pendaratan pertama.
+     --------------------------------------------------------------------- */
+
+  function stickyExperimentFor(handle) {
+    for (var i = 0; CFG.ex.length > i; i++) {
+      var ex = CFG.ex[i];
+      if (ex.x && ex.x.indexOf(handle) !== -1) continue;
+      if (ex.h !== "*" && (!ex.h || ex.h.indexOf(handle) === -1)) continue;
+      return ex;
+    }
+    return null;
+  }
+
+  function rewriteAnchor(a) {
+    if (!a || !a.getAttribute) return;
+    var href = a.getAttribute("href");
+    if (!href || href.indexOf("/products/") === -1) return;
+    if (/^https?:\/\//i.test(href) && href.indexOf(window.location.host) === -1) return;
+
+    var u;
+    try { u = new URL(href, window.location.origin); } catch (e) { return; }
+    var m = u.pathname.match(/\/products\/([^/?#]+)/);
+    if (!m) return;
+
+    var ex = stickyExperimentFor(m[1]);
+    if (!ex) return;
+
+    var want = bucketOf(vid, ex.id, ex.s) === "B" ? ex.b : ex.a;
+    if (u.searchParams.get("view") === (want || null)) return;
+    if (want) u.searchParams.set("view", want);
+    else u.searchParams.delete("view");
+    a.setAttribute("href", u.pathname + (u.search || "") + (u.hash || ""));
+  }
+
+  function rewriteAll() {
+    var links = document.querySelectorAll('a[href*="/products/"]');
+    for (var i = 0; links.length > i; i++) rewriteAnchor(links[i]);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", rewriteAll);
+  } else {
+    rewriteAll();
+  }
+
+  // Menangkap link yang disisipkan belakangan (quick view, hasil search, infinite
+  // scroll). pointerdown selalu mendahului click maupun klik tengah.
+  document.addEventListener(
+    "pointerdown",
+    function (e) {
+      var a = e.target && e.target.closest ? e.target.closest('a[href*="/products/"]') : null;
+      if (a) rewriteAnchor(a);
+    },
+    true
+  );
+
+  /* ---------------------------------------------------------------------
+     Menyiarkan variant ke alat analitik lain.
+
+     Alat pihak ketiga tidak tahu arti ?view=ab-b — buat mereka itu query
+     parameter biasa. Tanpa siaran ini GA4, GTM, dan heatmap mencampur kunjungan
+     variant A dan B jadi satu angka, dan angka campuran itu tetap terlihat masuk
+     akal. Tidak ada error yang muncul.
+
+     Sengaja TIDAK lewat utm_*. Menimpa parameter kampanye mengubah atribusi
+     order ke iklan berbayar, dan tidak ada satu pun vendor A/B (Optimizely, VWO,
+     AB Tasty, Convert, PostHog, GrowthBook, Statsig) yang memakai UTM sebagai
+     penanda variant. Google sendiri memindahkan identitas variant KELUAR dari URL
+     setelah Optimize dimatikan, menjadi event parameter exp_variant_string.
+     --------------------------------------------------------------------- */
+
+  /** Format yang dipakai integrasi resmi GA4: TOOL-EXPERIMENT-VARIANT. */
+  function expVariantString(expId, variantName) {
+    return "TLAB-" + expId + "-" + variantName;
+  }
+
+  function assign(target, source) {
+    for (var k in source) {
+      if (Object.prototype.hasOwnProperty.call(source, k)) target[k] = source[k];
+    }
+    return target;
+  }
+
+  /**
+   * Nama event dataLayer sengaja diberi awalan tl_ab_.
+   *
+   * Kalau dipakai nama polos seperti "add_to_cart", trigger GTM yang sudah ada di
+   * toko ini bisa ikut menyala dan mengirim event GA4 kedua untuk satu tindakan
+   * yang sama — revenue dan jumlah event jadi dobel tanpa ada tanda apa pun.
+   * Pemetaan ke nama event GA4 yang sebenarnya dilakukan di dalam GTM.
+   */
+  function broadcast(name, expId, variantName, extra) {
+    var payload = assign(
+      {
+        experiment_id: expId,
+        variant: variantName,
+        exp_variant_string: expVariantString(expId, variantName),
+        visitor_id: vid
+      },
+      extra || {}
+    );
+
+    // GTM / GA4 di storefront. Ini jalur yang didukung penuh — batasan sandbox
+    // yang melarang memuat gtag.js hanya berlaku di checkout, bukan di sini.
+    try {
+      window.dataLayer = window.dataLayer || [];
+      window.dataLayer.push(assign({ event: "tl_ab_" + name }, payload));
+    } catch (e) {}
+
+    /* Custom customer event: satu-satunya jembatan RESMI ke web pixel. Sandbox
+       pixel tidak bisa membaca DOM maupun dataLayer, dan event bawaan
+       product_added_to_cart tidak membawa cart attribute sama sekali — jadi tanpa
+       siaran ini pixel tidak akan pernah tahu variant pada langkah add-to-cart. */
+    try {
+      if (window.Shopify && Shopify.analytics && typeof Shopify.analytics.publish === "function") {
+        // Dokumentasi mewajibkan awalan nama app diikuti titik dua, supaya
+        // tidak bentrok dengan standard event: "my_app:event_name".
+        Shopify.analytics.publish("tl_ab:" + name, payload);
+      }
+    } catch (e) {}
+
+    /* PostHog di browser.
+
+       Yang dilakukan di sini HANYA mendaftarkan properti variant, supaya setiap
+       pageview, autocapture, heatmap, dan session replay dari posthog-js bisa
+       dipisah per variant.
+
+       Exposure TIDAK dikirim dari sini. Nama event exposure ditentukan PostHog
+       per eksperimen ($feature_flag_called untuk eksperimen lama,
+       $experiment_exposure untuk yang baru) dan hanya server yang tahu nama itu
+       dari jawaban API. Mengirim nama yang salah dari browser tidak ditolak
+       PostHog — ia cuma tidak pernah terhitung, dan eksperimen akan terlihat
+       kosong tanpa satu pun error. Karena itu exposure selalu dikirim server
+       lewat App Proxy, yang sekaligus kebal ad-blocker. */
+    try {
+      var ph = window.posthog;
+      var flagKey = flagKeyOf(expId);
+      if (ph && flagKey && typeof ph.register === "function") {
+        var reg = {};
+        reg["$feature/" + flagKey] = variantName === "B" ? "test" : "control";
+        ph.register(reg);
+      }
+    } catch (e) {}
+
+    /* Titik sambung untuk alat yang belum punya jalur resmi. */
+    try {
+      if (typeof window.__TL_AB_ON_EVENT__ === "function") window.__TL_AB_ON_EVENT__(name, payload);
+    } catch (e) {}
+  }
+
+  /** flag key PostHog milik sebuah eksperimen ("k" di config), atau "" kalau tidak ada. */
+  function flagKeyOf(expId) {
+    for (var i = 0; CFG.ex.length > i; i++) {
+      if (CFG.ex[i].id === expId) return CFG.ex[i].k || "";
+    }
+    return "";
+  }
+
+  /* ---------------------------------------------------------------------
+     Contentsquare.
+
+     Heatmap dan zoning memilih halaman berdasarkan URL, dan operator "is" yang
+     dipakai defaultnya MENGABAIKAN query string. Artinya ?view=ab-b tidak
+     memisahkan apa pun di sana: klik variant A dan B menumpuk di satu peta,
+     padahal tata letaknya memang sengaja berbeda. Peta campurannya tetap terlihat
+     normal.
+
+     Cara yang benar adalah dynamic variable, lalu dijadikan segment, lalu dipakai
+     di zoning comparison mode. Ini pola yang sama persis dipakai kedelapan
+     integrasi A/B resmi Contentsquare (AB Tasty AB_ABT_, Optimizely AB_OP_,
+     Kameleoon AB_kam_, Adobe Target AB_AT_, VWO AB_VWO_, Dynamic Yield AB_DY_,
+     Convert AB_CV_, Coveo AB_QB_) — tidak satu pun memakai URL.
+
+     afterPageView dipakai karena dynamic variable yang dikirim sebelum tag
+     Contentsquare siap akan hilang tanpa memunculkan error apa pun.
+     --------------------------------------------------------------------- */
+  function sendToContentsquare(expId, variantName) {
+    try {
+      window._uxa = window._uxa || [];
+      window._uxa.push([
+        "afterPageView",
+        function () {
+          try {
+            window._uxa.push([
+              "trackDynamicVariable",
+              { key: "AB_TL_" + expId, value: variantName }
+            ]);
+          } catch (e) {}
+        }
+      ]);
+      // Menandai diri sebagai integrasi, mengikuti anjuran snippet resmi mereka.
+      if (window.CS_CONF && window.CS_CONF.integrations && window.CS_CONF.integrations.push) {
+        window.CS_CONF.integrations.push("Treelogy A/B Test - v1.0.0");
+      }
+    } catch (e) {}
+  }
+
+  /* ---------------------------------------------------------------------
+     Identitas GA4.
+
+     Konversi terjadi di checkout, yang berjalan di sandbox pixel dan tidak bisa
+     memuat gtag.js. Satu-satunya jalur yang didukung Google untuk membelah
+     revenue per variant adalah mengirimnya dari server lewat Measurement
+     Protocol — dan itu butuh client_id GA4 milik pengunjung, yang hanya bisa
+     dibaca di sini.
+     --------------------------------------------------------------------- */
+
+  /** Cookie _ga berbentuk GA1.1.aaa.bbb; client_id adalah dua segmen terakhir. */
+  function ga4ClientId() {
+    var raw = readCookie("_ga") || "";
+    var parts = raw.split(".");
+    return parts.length > 3 ? parts.slice(-2).join(".") : "";
+  }
+
+  /**
+   * session_id ada di cookie _ga_CONTAINER sebagai segmen "s" diikuti unix time.
+   * Formatnya tidak didokumentasikan Google, jadi ini best-effort: kalau tidak
+   * terbaca, event server tetap terkirim tanpa session_id.
+   */
+  function ga4SessionId() {
+    var m = document.cookie.match(/_ga_[A-Z0-9]+=GS\d+\.\d+\.s(\d+)/);
+    return m ? m[1] : "";
+  }
+
+  /* ---------------------------------------------------------------------
+     Pengumpulan event.
+
+     Semua bersifat fire-and-forget lewat sendBeacon: tidak ada satu pun jalur di
+     bawah ini yang boleh memblokir render atau interaksi.
+     --------------------------------------------------------------------- */
+
+  function consentOk() {
+    try {
+      var cp = window.Shopify && window.Shopify.customerPrivacy;
+      if (cp && typeof cp.analyticsProcessingAllowed === "function") {
+        return cp.analyticsProcessingAllowed();
+      }
+    } catch (e) {}
+    return true; // tidak ada consent API terpasang = tidak ada yang perlu dihormati
+  }
+
+  /* Sesi browser: 30 menit idle. Bukan untuk bucketing (itu per visitor), tapi
+     untuk metrik per sesi dan pemeriksaan "exposure per sesi" di server. */
+  var SESSION_KEY = "_tl_sid";
+  var SESSION_IDLE_MS = 30 * 60 * 1000;
+  function sessionId() {
+    try {
+      var raw = sessionStorage.getItem(SESSION_KEY);
+      var now = Date.now();
+      if (raw) {
+        var parts = raw.split("|");
+        if (parts[0] && SESSION_IDLE_MS > now - Number(parts[1] || 0)) {
+          sessionStorage.setItem(SESSION_KEY, parts[0] + "|" + now);
+          return parts[0];
+        }
+      }
+      var fresh = newVisitorId();
+      sessionStorage.setItem(SESSION_KEY, fresh + "|" + now);
+      return fresh;
+    } catch (e) {
+      return "";
+    }
+  }
+
+  /* Kunci atribusi sekunder yang terlihat browser. cart_token diisi dari jawaban
+     /cart/update.js — kalau app lain menimpa cart attributes, order masih bisa
+     dipasangkan ke visitor ini lewat order.cart_token di webhook. */
+  var attributionKeys = {};
+
+  var queue = [];
+  function track(expId, variantName, type, productId, unique) {
+    queue.push({
+      e: expId,
+      v: variantName,
+      t: type,
+      p: productId || "",
+      n: unique ? "" : Math.random().toString(36).slice(2, 10)
+    });
+    scheduleFlush();
+  }
+
+  var flushTimer = null;
+  function scheduleFlush() {
+    if (flushTimer) return;
+    flushTimer = setTimeout(flush, 300);
+  }
+
+  var keysDirty = false;
+  function flush() {
+    flushTimer = null;
+    if (!consentOk()) { queue.length = 0; keysDirty = false; return; }
+    if (!queue.length && !keysDirty) return;
+    keysDirty = false;
+    var gaClient = ga4ClientId();
+    var body = JSON.stringify({
+      v: 2,
+      vid: vid,
+      sid: sessionId(),
+      keys: attributionKeys,
+      ev: queue.splice(0, 20),
+      // Dikirim supaya server bisa mengirim konversi ke GA4 atas nama pengunjung
+      // ini. Dihilangkan kalau GA4 tidak terpasang atau cookie-nya belum ada.
+      ga: gaClient ? { c: gaClient, s: ga4SessionId() } : undefined
+    });
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(CFG.ep, new Blob([body], { type: "text/plain;charset=UTF-8" }));
+      } else {
+        fetch(CFG.ep, { method: "POST", body: body, keepalive: true });
+      }
+    } catch (e) {}
+  }
+
+  window.addEventListener("pagehide", flush);
+
+  if (experiment && variant) {
+    // Jembatan ke web pixel: sandbox pixel tidak bisa membaca DOM, tapi bisa
+    // membaca cookie lewat browser.cookie. Ini satu-satunya cara pixel tahu
+    // visitor sedang berada di variant mana.
+    writeCookie("_tl_ab_last", experiment.id + "|" + variant + "|" + vid, 1, CFG.ckdom);
+
+    // unique=true -> di-dedupe per visitor per hari di server
+    track(experiment.id, variant, "exposure", CTX.productId, true);
+    track(experiment.id, variant, "product_viewed", CTX.productId, false);
+
+    // Inilah yang membuat GA4, GTM, dan heatmap tahu kunjungan ini variant apa.
+    // Nama "experience_impression" mengikuti integrasi eksperimen resmi GA4.
+    broadcast("experience_impression", experiment.id, variant, {
+      product_id: CTX.productId || "",
+      page_type: CTX.pageType || "",
+      template_suffix: currentSuffix
+    });
+
+    // Sekali per pageview, bukan per event: dynamic variable bersifat kontekstual
+    // untuk seluruh pageview, bukan penanda tindakan.
+    sendToContentsquare(experiment.id, variant);
+  }
+
+  /* ---------------------------------------------------------------------
+     Atribusi ke order.
+
+     Variant ditempelkan ke cart sebagai hidden attribute (prefix "_"), sehingga
+     ikut terbawa ke Order.note_attributes dan bisa dibaca webhook orders/paid.
+     Inilah jalur yang membuat penghitungan konversi kebal ad-blocker.
+     --------------------------------------------------------------------- */
+
+  function rememberCartToken(cart) {
+    var token = cart && cart.token;
+    if (!token || attributionKeys.cart_token === token) return;
+    attributionKeys.cart_token = String(token).slice(0, 128);
+    keysDirty = true;
+    scheduleFlush();
+  }
+
+  /* ex = null → hanya _tl_vid yang ditempel. Dilakukan pada SETIAP add-to-cart,
+     bukan hanya yang terpapar: order yang membawa visitor id tanpa penugasan
+     berarti pengunjungnya memang tidak pernah membuka halaman produk selama
+     test (mis. beli dari collection lewat link email) — dan webhook bisa
+     membedakannya dari atribusi yang benar-benar hilang. */
+  function cartAttributes(ex, variantName) {
+    var attrs = {};
+    if (ex && variantName) attrs["_tl_ab"] = ex.id + ":" + variantName;
+    var abx = membershipString();
+    if (abx) attrs["_tl_abx"] = abx;
+    attrs["_tl_vid"] = vid;
+    return attrs;
+  }
+
+  /* Keanggotaan eksperimen komponen = eksperimen yang drawer-nya SUDAH
+     dilihat pengunjung ini. Sumbernya atribut _tl_abx yang dibawa keranjang
+     (dibaca Liquid di CTX.abc) ditambah exposure di halaman ini, sehingga
+     add-to-cart di halaman mana pun tetap membawa keanggotaan yang lengkap. */
+  var memberships = {};
+  (function () {
+    var raw = (CTX.abc && CTX.abc._tl_abx) || "";
+    var pairs = String(raw).split(",");
+    for (var i = 0; pairs.length > i; i++) {
+      var kv = pairs[i].split(":");
+      if (kv[0] && (kv[1] === "A" || kv[1] === "B")) memberships[kv[0]] = kv[1];
+    }
+  })();
+
+  function membershipString() {
+    var out = [];
+    for (var id in memberships) {
+      if (Object.prototype.hasOwnProperty.call(memberships, id)) out.push(id + ":" + memberships[id]);
+    }
+    return out.join(",");
+  }
+
+  function runningComponentExperiment(expId) {
+    for (var i = 0; CFG.ex.length > i; i++) {
+      if (CFG.ex[i].id === expId && CFG.ex[i].t === "c") return CFG.ex[i];
+    }
+    return null;
+  }
+
+  function stampCart(ex, variantName) {
+    var attrs = cartAttributes(ex, variantName);
+    try {
+      fetch("/cart/update.js", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attributes: attrs })
+      })
+        .then(function (res) { return res && res.ok ? res.json() : null; })
+        .then(rememberCartToken)
+        .catch(function () {});
+    } catch (e) {}
+  }
+
+  /* Penangkap add-to-cart dipasang di SEMUA halaman. Yang berbeda hanya
+     isinya: di halaman yang ikut test, cart diberi variant dan event funnel
+     dikirim; di halaman lain, cart hanya diberi visitor id. */
+  function onAddToCart() {
+    stampCart(experiment, variant);
+    if (experiment && variant) {
+      track(experiment.id, variant, "add_to_cart", CTX.productId, false);
+      broadcast("add_to_cart", experiment.id, variant, { product_id: CTX.productId || "" });
+    }
+    trackComponentFunnel("add_to_cart");
+  }
+
+  /** Event funnel untuk setiap eksperimen komponen yang sudah diikuti pengunjung ini. */
+  function trackComponentFunnel(type) {
+    for (var id in memberships) {
+      if (!Object.prototype.hasOwnProperty.call(memberships, id)) continue;
+      if (!runningComponentExperiment(id)) continue;
+      track(id, memberships[id], type, CTX.productId, false);
+      broadcast(type, id, memberships[id], { product_id: CTX.productId || "" });
+    }
+  }
+
+  {
+    var origFetch = window.fetch;
+    if (typeof origFetch === "function") {
+      window.fetch = function (input, init) {
+        var url = "";
+        try { url = typeof input === "string" ? input : (input && input.url) || ""; } catch (e) {}
+        var promise = origFetch.apply(this, arguments);
+        if (url.indexOf("/cart/add") !== -1) {
+          promise.then(function (res) {
+            if (res && res.ok) onAddToCart();
+            return res;
+          }).catch(function () {});
+        }
+        return promise;
+      };
+    }
+
+    // Sebagian theme punya jalur add-to-cart yang mengirim form secara native,
+    // tanpa AJAX. Jalur itu tidak pernah menyentuh fetch maupun XHR, jadi tanpa
+    // penangkap ini order dari sana tidak ter-atribusi ke variant mana pun.
+    //
+    // keepalive dipakai supaya request tetap terkirim walau halaman langsung
+    // berpindah karena form-nya jalan.
+    document.addEventListener(
+      "submit",
+      function (e) {
+        var form = e.target;
+        if (!form || !form.getAttribute) return;
+        var action = form.getAttribute("action") || "";
+        if (action.indexOf("/cart/add") === -1) return;
+        try {
+          fetch("/cart/update.js", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            keepalive: true,
+            body: JSON.stringify({ attributes: cartAttributes(experiment, variant) })
+          }).catch(function () {});
+        } catch (err) {}
+        if (experiment && variant) {
+          track(experiment.id, variant, "add_to_cart", CTX.productId, false);
+          broadcast("add_to_cart", experiment.id, variant, { product_id: CTX.productId || "" });
+        }
+        trackComponentFunnel("add_to_cart");
+      },
+      true
+    );
+
+    // Theme lama masih memakai XMLHttpRequest untuk add-to-cart.
+    var origOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      try {
+        if (String(url).indexOf("/cart/add") !== -1) {
+          this.addEventListener("load", function () {
+            if (this.status >= 200 && 300 > this.status) onAddToCart();
+          });
+        }
+      } catch (e) {}
+      return origOpen.apply(this, arguments);
+    };
+  }
+
+  /* ---------------------------------------------------------------------
+     Exposure komponen: saat komponen BENAR-BENAR terlihat.
+
+     Pemicunya harus identik di kedua varian, dan terjadi sebelum isi komponen
+     terlihat — kalau tidak, SRM tidak lagi sah. Untuk cart drawer itu kelas
+     .active pada .mini-cart: kontrak yang dipakai drawer lama DAN drawer v3
+     (juga oleh gtm-events.js untuk view_cart). Pengunjung yang tidak pernah
+     membuka drawer tidak ikut eksperimen dan tidak mengencerkannya.
+     --------------------------------------------------------------------- */
+  var COMPONENT_OPEN_SELECTOR = { cart_drawer: ".mini-cart" };
+
+  function onComponentOpened(key, arm) {
+    var ex = arm.ex;
+    var v = arm.variant;
+    // Varian yang terlihat berbeda dari penugasan (atribut belum tertulis,
+    // atau halaman ini akan dimuat ulang): catat, tapi JANGAN hitung exposure.
+    if (renderedArm(key) !== v || componentReloading) {
+      track(ex.id, v, "render_mismatch", "", true);
+      return;
+    }
+    track(ex.id, v, "exposure", "", true);
+    broadcast("experience_impression", ex.id, v, { component: key, page_type: CTX.pageType || "" });
+    sendToContentsquare(ex.id, v);
+    try {
+      var ph = window.posthog;
+      if (ph && ex.k && typeof ph.register === "function") {
+        var reg = {};
+        reg["$feature/" + ex.k] = v === "B" ? "test" : "control";
+        ph.register(reg);
+        rememberFlagKey(ex.k);
+      }
+    } catch (e) {}
+    if (memberships[ex.id] !== v) {
+      memberships[ex.id] = v;
+      stampCart(null, null);
+    }
+  }
+
+  function watchComponents() {
+    for (var key in componentArms) {
+      if (!Object.prototype.hasOwnProperty.call(componentArms, key)) continue;
+      var selector = COMPONENT_OPEN_SELECTOR[key];
+      var el = selector ? document.querySelector(selector) : null;
+      if (!el) continue;
+      (function (key, el) {
+        var seen = false;
+        var check = function () {
+          if (seen || !el.classList.contains("active")) return;
+          seen = true;
+          onComponentOpened(key, componentArms[key]);
+        };
+        if (typeof MutationObserver === "function") {
+          new MutationObserver(check).observe(el, { attributes: true, attributeFilter: ["class"] });
+        }
+        check();
+      })(key, el);
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", watchComponents);
+  } else {
+    watchComponents();
+  }
+})();

@@ -1,0 +1,87 @@
+[
+  {
+    "event_name": "user_logged_in",
+    "event_description": "A user successfully authenticated to the experiment dashboard.",
+    "file": "dashboard/app/actions.ts"
+  },
+  {
+    "event_name": "user_logged_out",
+    "event_description": "An authenticated user signed out of the experiment dashboard.",
+    "file": "dashboard/components/logout-button.tsx"
+  },
+  {
+    "event_name": "experiment_created",
+    "event_description": "An administrator created a new A/B test experiment.",
+    "file": "dashboard/app/wizard-actions.ts; dashboard/app/actions.ts"
+  },
+  {
+    "event_name": "experiment_updated",
+    "event_description": "An administrator updated an existing experiment configuration.",
+    "file": "dashboard/app/actions.ts"
+  },
+  {
+    "event_name": "experiment_controlled",
+    "event_description": "An administrator started, paused, completed, republished, or kill-switched experiments.",
+    "file": "dashboard/app/actions.ts"
+  },
+  {
+    "event_name": "theme_analysis_completed",
+    "event_description": "The experiment wizard completed analysis of storefront theme variants.",
+    "file": "dashboard/app/wizard-actions.ts"
+  },
+  {
+    "event_name": "experiment_setup_step_completed",
+    "event_description": "An administrator completed a step in the new-experiment workflow.",
+    "file": "dashboard/components/wizard/new-experiment-wizard.tsx"
+  },
+  {
+    "event_name": "storefront_snapshot_failed",
+    "event_description": "The authenticated storefront snapshot endpoint could not fetch a usable page.",
+    "file": "dashboard/app/api/snapshot/route.ts"
+  },
+  {
+    "event_name": "$feature_flag_called",
+    "event_description": "Storefront visitor exposed to an A/B experiment variant. Sent server-side from the app proxy with $feature_flag = tl-ab-<experimentId> and $feature_flag_response = control|test.",
+    "file": "app/lib/posthog/events.server.ts; app/routes/proxy.collect.tsx"
+  },
+  {
+    "event_name": "product viewed",
+    "event_description": "Exposed visitor viewed a product page (storefront, server-relayed).",
+    "file": "app/lib/posthog/events.server.ts"
+  },
+  {
+    "event_name": "product added to cart",
+    "event_description": "Exposed visitor added a product to cart (storefront, server-relayed).",
+    "file": "app/lib/posthog/events.server.ts"
+  },
+  {
+    "event_name": "checkout started",
+    "event_description": "Exposed visitor started checkout (web pixel, server-relayed). Funnel step, not a conversion.",
+    "file": "app/lib/posthog/events.server.ts"
+  },
+  {
+    "event_name": "checkout completed",
+    "event_description": "Exposed visitor completed checkout (web pixel, server-relayed). Funnel step, not a conversion.",
+    "file": "app/lib/posthog/events.server.ts"
+  },
+  {
+    "event_name": "order paid",
+    "event_description": "Order paid for an exposed visitor, from the orders/paid webhook. Source of truth for conversion, revenue per visitor and AOV metrics.",
+    "file": "app/routes/webhooks.orders.paid.tsx"
+  },
+  {
+    "event_name": "order cancelled",
+    "event_description": "A previously paid order was cancelled (orders/cancelled webhook).",
+    "file": "app/routes/webhooks.orders.cancelled.tsx"
+  },
+  {
+    "event_name": "order refunded",
+    "event_description": "A refund was issued on a paid order (refunds/create webhook). Guardrail metric.",
+    "file": "app/routes/webhooks.refunds.create.tsx"
+  },
+  {
+    "event_name": "bucket drift detected",
+    "event_description": "Browser and server disagreed on a visitor's variant. Pipeline guardrail; any occurrence invalidates the experiment.",
+    "file": "app/routes/proxy.collect.tsx"
+  }
+]

@@ -1,0 +1,20 @@
+.git
+.github
+node_modules
+build
+.cache
+.react-router
+.shopify
+
+# JANGAN pernah memasukkan file env ke dalam image: layer image tidak bisa dihapus
+# belakangan, jadi secret yang terlanjur ikut akan bisa dibaca siapa pun yang
+# menarik image itu. Secret masuk lewat `fly secrets` saat runtime.
+.env
+.env.*
+
+# Aplikasi terpisah dan dokumentasi, tidak dibutuhkan app Shopify.
+dashboard
+claudedocs
+scripts
+prisma/dev.sqlite
+prisma/dev.sqlite-journal

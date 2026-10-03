@@ -1,0 +1,64 @@
+# Shopify app config — Treelogy A/B Test PDP (custom app, single store)
+client_id = "f4afe79d74c09bc18bb294e2909ff067"
+name = "A/B Test Treelogy"
+handle = "treelogy-ab-test"
+application_url = "https://ab.treelogy-services.my.id"
+embedded = true
+
+[build]
+
+[access_scopes]
+# read/write_themes  -> baca templates/product.json, bikin templates/product.ab-b.json
+# read_orders        -> baca note_attributes untuk atribusi konversi
+# write_orders       -> tulis metafield tl_ab.variant ke order, supaya Shopify
+#                       Analytics bisa membelah sales/orders per variant
+# read_products      -> resource picker produk/collection di admin UI
+# write_pixels + read_customer_events -> web pixel extension
+# read/write_translations + read_locales -> salin terjemahan template ke variant B
+#                       (tanpa ini variant B tampil berbahasa Inggris, tanpa error)
+# read_markets       -> terjemahan yang terikat market harus ditulis ulang dengan market yang sama
+scopes = "read_themes,write_themes,read_orders,write_orders,read_products,write_pixels,read_customer_events,read_translations,write_translations,read_locales,read_markets"
+
+[auth]
+redirect_urls = [
+  "https://ab.treelogy-services.my.id/auth/callback",
+  "https://ab.treelogy-services.my.id/auth/shopify/callback",
+  "https://ab.treelogy-services.my.id/api/auth/callback"
+]
+
+# Storefront /apps/tl-ab/*  ->  https://ab.treelogy-services.my.id/proxy/*
+[app_proxy]
+url = "https://ab.treelogy-services.my.id/proxy"
+subpath = "tl-ab"
+prefix = "apps"
+
+[webhooks]
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = ["app/uninstalled"]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = ["app/scopes_update"]
+
+  # SUMBER KEBENARAN konversi
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/paid"
+  topics = ["orders/paid"]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/create"
+  topics = ["orders/create"]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders/cancelled"
+  topics = ["orders/cancelled"]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/refunds/create"
+  topics = ["refunds/create"]
+
+[pos]
+embedded = false

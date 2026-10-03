@@ -1,0 +1,340 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   Palet "command center".
+
+   Dua warna data dipakai konsisten di seluruh aplikasi dan tidak pernah dipakai
+   untuk hal lain:
+     A (kontrol) = biru   #3B82F6
+     B (variant) = amber  #F59E0B
+   Biru vs amber terpisah baik di deuteranopia maupun protanopia, dan bentuk garis
+   pada grafik tetap dibedakan (solid vs putus-putus) supaya warna bukan satu-satunya
+   pembeda.
+   --------------------------------------------------------------------------- */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-fira-sans);
+  --font-mono: var(--font-fira-code);
+  --font-heading: var(--font-fira-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-variant-a: var(--variant-a);
+  --color-variant-b: var(--variant-b);
+  --color-positive: var(--positive);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Light mode: teks minimal slate-600 supaya kontras tetap lolos 4.5:1. */
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #1d4ed8;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #475569;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #dc2626;
+  --border: #e2e8f0;
+  --input: #cbd5e1;
+  --ring: #2563eb;
+
+  --variant-a: #2563eb;
+  --variant-b: #b45309;
+  --positive: #047857;
+
+  --chart-1: #2563eb;
+  --chart-2: #b45309;
+  --chart-3: #047857;
+  --chart-4: #7c3aed;
+  --chart-5: #475569;
+
+  --radius: 0.625rem;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #1d4ed8;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #2563eb;
+}
+
+/* Dark mode adalah tampilan utama aplikasi ini. */
+.dark {
+  --background: #070b14;
+  --foreground: #e6ecf5;
+  --card: #0d1424;
+  --card-foreground: #e2e8f0;
+  --popover: #121a2b;
+  --popover-foreground: #e2e8f0;
+  --primary: #3b82f6;
+  --primary-foreground: #06101f;
+  --secondary: #1a2438;
+  --secondary-foreground: #e2e8f0;
+  --muted: #151e30;
+  --muted-foreground: #94a3b8;
+  --accent: #1a2438;
+  --accent-foreground: #f8fafc;
+  --destructive: #f87171;
+  --border: #1e293b;
+  --input: #243349;
+  --ring: #3b82f6;
+
+  --variant-a: #3b82f6;
+  --variant-b: #f59e0b;
+  --positive: #34d399;
+
+  --chart-1: #3b82f6;
+  --chart-2: #f59e0b;
+  --chart-3: #34d399;
+  --chart-4: #a78bfa;
+  --chart-5: #64748b;
+
+  --sidebar: #0c1320;
+  --sidebar-foreground: #e2e8f0;
+  --sidebar-primary: #3b82f6;
+  --sidebar-primary-foreground: #06101f;
+  --sidebar-accent: #1a2438;
+  --sidebar-accent-foreground: #f8fafc;
+  --sidebar-border: #1e293b;
+  --sidebar-ring: #3b82f6;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    /* Angka pada tabel harus rata secara vertikal supaya mudah dibandingkan. */
+    font-variant-numeric: tabular-nums;
+    /* Semburat biru samar di puncak halaman: satu titik cahaya, bukan gradien
+       yang menyapu seluruh latar. Di light mode hampir tak terlihat, dan itu
+       memang tujuannya. */
+    background-image: radial-gradient(
+      ellipse 70% 45% at 50% -10%,
+      color-mix(in oklab, var(--primary) 14%, transparent),
+      transparent 70%
+    );
+    background-attachment: fixed;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@layer utilities {
+  /* Angka besar KPI: monospace, rapat, tabular. */
+  .stat-figure {
+    @apply font-mono tabular-nums tracking-tight;
+    font-feature-settings: "ss01";
+  }
+
+  /* Label kecil di atas angka/section. Satu gaya untuk seluruh aplikasi. */
+  .eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground;
+  }
+
+  /* ------------------------------------------------------------------
+     Permukaan kartu.
+
+     Kedalaman dibangun dari tiga hal yang masing-masing tipis: gradien
+     latar 2% dari atas ke bawah, garis terang 1px di tepi atas (cahaya dari
+     atas), dan bayangan jatuh yang panjang tapi sangat lembut. Tidak ada
+     satu pun yang terlihat sendirian; bersama-sama kartu terasa "terangkat"
+     tanpa terlihat seperti kotak yang diberi shadow.
+     ------------------------------------------------------------------ */
+  .surface {
+    background:
+      linear-gradient(180deg, color-mix(in oklab, var(--card) 100%, white 2.5%), var(--card)) padding-box;
+    border: 1px solid var(--border);
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in oklab, white 5%, transparent),
+      0 1px 2px 0 rgb(0 0 0 / 0.25),
+      0 16px 40px -24px rgb(0 0 0 / 0.55);
+  }
+  :root:not(.dark) .surface {
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.9),
+      0 1px 2px 0 rgb(15 23 42 / 0.06),
+      0 12px 32px -20px rgb(15 23 42 / 0.18);
+  }
+
+  /* Kartu yang bisa diklik: naik 2px dan tepinya menyala. Transform, bukan
+     ukuran, supaya tetangganya tidak bergeser. */
+  .surface-hover {
+    transition:
+      transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      border-color 220ms ease,
+      box-shadow 220ms ease;
+  }
+  .surface-hover:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in oklab, var(--primary) 45%, var(--border));
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in oklab, white 6%, transparent),
+      0 1px 2px 0 rgb(0 0 0 / 0.25),
+      0 24px 48px -24px color-mix(in oklab, var(--primary) 35%, rgb(0 0 0 / 0.6));
+  }
+
+  /* Garis grid halus di latar gelap, tidak muncul di light mode. */
+  .grid-backdrop {
+    background-image:
+      linear-gradient(to right, color-mix(in oklab, var(--border) 45%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--border) 45%, transparent) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+  }
+
+  /* ------------------------------------------------------------------
+     Gerak.
+
+     Dua jenis saja, dan keduanya hanya saat masuk: konten naik-memudar
+     (.reveal), dan batang tumbuh dari kiri (.bar-grow). Tidak ada animasi
+     yang berulang selain penanda Live. Durasi pendek dan easing keluar
+     (ease-out) supaya terasa responsif, bukan teatrikal.
+     ------------------------------------------------------------------ */
+  @keyframes tl-rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .reveal {
+    animation: tl-rise 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    /* --i diisi per elemen: 0, 1, 2… → jeda 60ms bertingkat. */
+    animation-delay: calc(var(--i, 0) * 60ms);
+  }
+
+  @keyframes tl-grow-x {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+  .bar-grow {
+    transform-origin: left center;
+    animation: tl-grow-x 800ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation-delay: calc(var(--i, 0) * 60ms + 120ms);
+  }
+
+  /* ------------------------------------------------------------------
+     Warna kinerja. Hijau = lebih baik untuk desain baru, merah = lebih
+     buruk — di mana pun angka bertanda muncul. Dua tingkat: "sementara"
+     (tint lembut) dan "pasti" (penuh + cahaya), supaya warna sekaligus
+     memberi tahu arah DAN kepastian. Biru/amber tetap identitas A/B saja.
+     ------------------------------------------------------------------ */
+  .pill-positive,
+  .pill-negative {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-mono text-sm font-semibold tabular-nums;
+    border: 1px solid;
+    transition: box-shadow 300ms ease, background-color 300ms ease;
+  }
+  .pill-positive {
+    color: var(--positive);
+    border-color: color-mix(in oklab, var(--positive) 35%, transparent);
+    background: color-mix(in oklab, var(--positive) 12%, transparent);
+  }
+  .pill-negative {
+    color: var(--destructive);
+    border-color: color-mix(in oklab, var(--destructive) 35%, transparent);
+    background: color-mix(in oklab, var(--destructive) 12%, transparent);
+  }
+  .pill-positive.is-certain {
+    background: linear-gradient(135deg, color-mix(in oklab, var(--positive) 28%, transparent), color-mix(in oklab, var(--positive) 12%, transparent));
+    box-shadow: 0 0 22px color-mix(in oklab, var(--positive) 35%, transparent);
+  }
+  .pill-negative.is-certain {
+    background: linear-gradient(135deg, color-mix(in oklab, var(--destructive) 28%, transparent), color-mix(in oklab, var(--destructive) 12%, transparent));
+    box-shadow: 0 0 22px color-mix(in oklab, var(--destructive) 30%, transparent);
+  }
+
+  /* Teks bergradien untuk satu angka utama per halaman. Dipakai hemat. */
+  .text-glow-positive {
+    background: linear-gradient(135deg, var(--positive), color-mix(in oklab, var(--positive) 60%, white));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 18px color-mix(in oklab, var(--positive) 35%, transparent));
+  }
+  .text-glow-negative {
+    background: linear-gradient(135deg, var(--destructive), color-mix(in oklab, var(--destructive) 60%, white));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 18px color-mix(in oklab, var(--destructive) 30%, transparent));
+  }
+
+}
+
+/* Hormati preferensi sistem: matikan semua animasi kalau diminta. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,16 @@
+api_version = "2026-07"
+
+[[extensions]]
+type = "web_pixel_extension"
+name = "Treelogy A/B Funnel"
+handle = "tl-ab-pixel"
+uid = "1ba709fc-bdb9-7c61-2b3c-b76835ceefcdb9682409"
+runtime_context = "strict"
+
+  [extensions.settings]
+  type = "object"
+
+    [extensions.settings.fields.collectEndpoint]
+    name = "Collect endpoint"
+    description = "Path App Proxy untuk menerima event funnel"
+    type = "single_line_text_field"

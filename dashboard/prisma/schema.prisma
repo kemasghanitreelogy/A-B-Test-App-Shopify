@@ -1,0 +1,370 @@
+// ============================================================================
+// FILE INI DIHASILKAN OTOMATIS — JANGAN DIEDIT DI SINI.
+// Sumber: prisma/schema.prisma
+// Untuk mengubahnya: edit file sumber, lalu jalankan dari root repo:
+//     node scripts/sync-dashboard.mjs
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+
+  @@index([shop])
+}
+
+/// Satu eksperimen A/B. Semua targeting & metric dipilih user di admin UI.
+model Experiment {
+  id         String  @id @default(cuid())
+  shop       String
+  name       String
+  hypothesis String?
+
+  /// draft | running | paused | completed | archived
+  status String @default("draft")
+
+  /// template = alternate product template (?view=suffix) · component = site
+  /// component switched by a hidden cart attribute (claudedocs/SPEC-component-experiments.md)
+  kind      String  @default("template")
+  /// component key from app/lib/components.ts, e.g. "cart_drawer"; null for template experiments
+  component String?
+
+  /// all_products | product_ids | collection_ids
+  targetType     String   @default("all_products")
+  /// GID produk / collection yang dipilih lewat resource picker
+  targetIds      String[] @default([])
+  /// handle produk hasil resolve saat publish; kosong kalau all_products
+  targetHandles  String[] @default([])
+  /// handle produk yang dikecualikan
+  excludeHandles String[] @default([])
+
+  /// null = templates/product.json (template default)
+  variantASuffix   String?
+  /// "ab-b" => templates/product.ab-b.json
+  variantBSuffix   String
+  /// checksum template B saat publish, untuk deteksi perubahan diam-diam
+  variantBChecksum String?
+  /// component experiments built from a draft theme (SPEC-component-experiments §10):
+  /// the draft it came from, and the isolated snippets the entry snippets render for B.
+  /// null entries = the component's fallback B.
+  variantBSourceThemeId   String?
+  variantBSourceThemeName String?
+  variantBEntries         Json?
+  /// checksum template A saat start; sama dengan B = A/A test (sah, tapi harus disadari)
+  variantAChecksum String?
+
+  splitPctB Int @default(50)
+
+  /// cvr | atc_rate | rpv | aov  -- dikunci begitu status = running
+  primaryMetric String @default("cvr")
+  mdeRelative   Float  @default(0.2)
+  minSampleArm  Int    @default(21106)
+
+  startedAt DateTime?
+  endedAt   DateTime?
+
+  /// --- Cermin di PostHog (acuan analisis) ---
+  ///
+  /// Bucketing tetap dilakukan di storefront; PostHog hanya menerima event yang
+  /// sudah membawa variant, lalu menghitung hasilnya dengan mesin statistiknya
+  /// sendiri. Kolom-kolom ini menyimpan tautan ke objek PostHog supaya lifecycle
+  /// (launch / pause / resume / end) bisa dicerminkan dan hasilnya bisa dibaca balik.
+  ///
+  /// id eksperimen PostHog; null = belum pernah disinkronkan
+  posthogExperimentId   Int?
+  /// flag key yang jadi identitas eksperimen di PostHog: "tl-ab-<id>"
+  posthogFeatureFlagKey String?   @unique
+  posthogFeatureFlagId  Int?
+  /// nama event exposure yang diharapkan PostHog untuk eksperimen ini
+  /// ($feature_flag_called atau $experiment_exposure) — dibaca dari API, bukan ditebak
+  posthogExposureEvent  String?
+  posthogSyncedAt       DateTime?
+  /// alasan sinkronisasi terakhir gagal; sinkronisasi tidak pernah memblokir lifecycle lokal
+  posthogSyncError      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments Assignment[]
+  events      Event[]
+  conversions Conversion[]
+
+  @@index([shop, status])
+}
+
+/// Satu baris per visitor per eksperimen. Sticky assignment.
+model Assignment {
+  visitorId    String
+  experimentId String
+  /// A | B
+  variant      String
+  firstSeenAt  DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+
+  experiment Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@id([visitorId, experimentId])
+  @@index([experimentId, variant])
+}
+
+/// Event funnel. dedupeKey mencegah double-count dari retry sendBeacon.
+model Event {
+  id           BigInt   @id @default(autoincrement())
+  experimentId String
+  visitorId    String
+  variant      String
+  /// exposure | product_viewed | add_to_cart | checkout_started | checkout_completed | bucket_drift | render_mismatch
+  type         String
+  productId    String?
+  /// storefront | pixel | canary — satu tipe event hanya boleh datang dari satu sumber
+  source       String   @default("storefront")
+  /// sesi browser (sessionStorage, 30 menit idle); null untuk event lama
+  sessionId    String?
+  occurredAt   DateTime @default(now())
+  dedupeKey    String   @unique
+
+  experiment Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@index([experimentId, variant, occurredAt])
+  @@index([experimentId, type, occurredAt])
+}
+
+/// SUMBER KEBENARAN konversi. Diisi dari webhook orders/paid, bukan dari JS.
+model Conversion {
+  orderId      String  @id
+  experimentId String
+  variant      String
+  visitorId    String?
+
+  totalPrice      Decimal   @db.Decimal(14, 2)
+  currency        String
+  financialStatus String?
+  createdAt       DateTime
+  /// diisi kalau order dibatalkan; baris dengan nilai ini di-exclude dari hasil
+  cancelledAt     DateTime?
+  /// total refund, dikurangkan dari revenue
+  refundedAmount  Decimal   @default(0) @db.Decimal(14, 2)
+
+  /// webhook | pixel
+  source String @default("webhook")
+  /// kunci mana yang berhasil memasangkan order ke visitor:
+  /// cart_attr | checkout_token | cart_token
+  attributionKind String @default("cart_attr")
+
+  experiment Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@index([experimentId, variant, createdAt])
+}
+
+/// SEMUA order paid yang masuk webhook — punya atribusi atau tidak.
+///
+/// Tanpa tabel ini, order yang kehilangan cart attribute lenyap tanpa jejak dan
+/// coverage atribusi tidak pernah bisa diukur. "Tidak tahu variant-nya" adalah
+/// informasi, bukan alasan membuang baris.
+model OrderIntake {
+  orderId         String   @id
+  shop            String
+  checkoutToken   String?
+  cartToken       String?
+  totalPrice      Decimal  @db.Decimal(14, 2)
+  currency        String
+  financialStatus String?
+  /// web | shop_app | pos | shopify_draft_order | …
+  sourceName      String?
+  createdAt       DateTime
+  /// attributed | unattributed | excluded (POS, draft order: bukan storefront)
+  status          String
+  /// cart_attr | checkout_token | cart_token | null
+  attributionKind String?
+  receivedAt      DateTime @default(now())
+
+  @@index([shop, status, createdAt])
+}
+
+/// Kunci sekunder untuk atribusi berlapis.
+///
+/// Cart attribute bisa ditimpa app lain atau hilang saat cart di-merge. cart_token
+/// (dari /cart.js) dan checkout_token (dari pixel) tetap ada di payload order,
+/// jadi order masih bisa dipasangkan ke visitor — dan variant-nya tetap dari
+/// Assignment yang dibuat jalur bertanda tangan, bukan dari kunci ini.
+model AttributionKey {
+  /// cart_token | checkout_token
+  kind         String
+  value        String
+  visitorId    String
+  experimentId String
+  variant      String
+  seenAt       DateTime @default(now())
+
+  @@id([kind, value])
+  @@index([visitorId])
+}
+
+/// Hasil pemeriksaan invariant pipeline (I1..I14), satu baris per pemeriksaan.
+model HealthSample {
+  id           BigInt   @id @default(autoincrement())
+  experimentId String?
+  /// I1 | I2 | …
+  check        String
+  /// ok | warn | fail | info
+  status       String
+  value        Float?
+  detail       String?
+  /// teks detail dalam bahasa Inggris (dashboard dua bahasa)
+  detailEn     String?
+  checkedAt    DateTime @default(now())
+
+  @@index([check, checkedAt])
+  @@index([experimentId, checkedAt])
+}
+
+/// Bukti hidup per sumber event. Nol event ≠ nol kejadian — ini yang membedakan.
+model SourceHeartbeat {
+  /// storefront | pixel | webhook
+  source     String   @id
+  lastSeenAt DateTime
+}
+
+/// Event perilaku SATU-SATU dari storefront (cart drawer, …), jalur first-party
+/// yang tahan ad-blocker. Klien menyimpannya di antrean localStorage dan
+/// mengirim ulang sampai server menjawab 2xx; `uuid` buatan klien membuat
+/// kiriman ulang tidak pernah terhitung dua kali. Sumber kebenaran untuk
+/// analisis perilaku; GA4 hanya salinan yang bisa bolong karena blokir.
+/// Kontrak event: Treelogy claudedocs/gtm/CART-DRAWER-TRACKING.md
+model InteractionEvent {
+  id         BigInt   @id @default(autoincrement())
+  /// id event buatan klien — kunci idempotensi
+  uuid       String   @unique
+  shop       String
+  /// cart_open | cart_close | cart_line_change | …
+  name       String
+  /// cart_drawer
+  surface    String
+  /// implementasi yang dilihat pengunjung: legacy | v3
+  ui         String?
+  action     String?
+  detail     String?
+  variantId  String?
+  value      Decimal? @db.Decimal(14, 2)
+  ms         Int?
+  visitorId  String?
+  sessionId  String?
+  /// client_id GA4 (dua segmen terakhir cookie _ga) untuk menjahit ke GA4
+  gaClientId String?
+  /// keanggotaan eksperimen saat event terjadi: "exp1:B,exp2:A" (_tl_ab + _tl_abx)
+  ab         String?
+  pagePath   String?
+  locale     String?
+  /// perangkat tim (?_tl_ab_off=1) atau otomasi — disimpan, dikecualikan dari laporan
+  internal   Boolean  @default(false)
+  occurredAt DateTime
+  receivedAt DateTime @default(now())
+
+  @@index([shop, name, occurredAt])
+  @@index([surface, occurredAt])
+  @@index([visitorId])
+}
+
+/// Identitas GA4 milik seorang visitor.
+///
+/// Konversi terjadi di checkout, yang berjalan di sandbox pixel dan tidak boleh
+/// memuat gtag.js. Satu-satunya jalur yang DIDUKUNG Google untuk membelah revenue
+/// per variant adalah mengirimnya dari server lewat Measurement Protocol — dan itu
+/// butuh client_id GA4 milik pengunjung, yang hanya bisa dibaca di storefront.
+///
+/// Sengaja disimpan di sini, bukan sebagai cart attribute tambahan: cart attribute
+/// tanpa awalan dua garis bawah terlihat pelanggan di checkout.
+model VisitorAnalytics {
+  visitorId    String   @id
+  ga4ClientId  String
+  /// best-effort; formatnya tidak didokumentasikan Google
+  ga4SessionId String?
+  updatedAt    DateTime @default(now()) @updatedAt
+}
+
+/// Idempotency webhook, dedupe by X-Shopify-Webhook-Id.
+model WebhookLog {
+  webhookId  String   @id
+  topic      String
+  shop       String
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+}
+
+/// User dashboard Next.js di Vercel. Terpisah dari Session (yang milik OAuth Shopify).
+model AdminUser {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  passwordHash String
+  /// admin = boleh menjalankan/menghentikan test; viewer = hanya lihat
+  role         String    @default("admin")
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+/// Jejak siapa melakukan apa.
+///
+/// Menjalankan atau menghentikan eksperimen mengubah apa yang dilihat pelanggan
+/// sungguhan dan memutus kontinuitas data. Tanpa catatan ini, "kenapa test ini
+/// berhenti hari Selasa" tidak akan pernah bisa dijawab.
+model AuditLog {
+  id           BigInt   @id @default(autoincrement())
+  actorEmail   String
+  action       String
+  experimentId String?
+  detail       String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([experimentId])
+}
+
+/// Outbox event ke PostHog.
+///
+/// Event dianggap "tercatat" begitu barisnya tersimpan di sini, dalam transaksi
+/// yang sama dengan Event/Conversion. Pengiriman ke PostHog dilakukan sesudahnya
+/// dan boleh gagal: restart mesin, PostHog down, atau rate limit tidak pernah
+/// menghilangkan event, hanya menundanya. `uuid` bersifat deterministik (UUID v5
+/// dari dedupeKey) sehingga kiriman ulang tidak pernah terhitung dua kali.
+model PostHogOutbox {
+  id            BigInt    @id @default(autoincrement())
+  uuid          String    @unique
+  distinctId    String
+  event         String
+  properties    Json
+  /// waktu kejadian sebenarnya, bukan waktu pengiriman
+  occurredAt    DateTime
+  createdAt     DateTime  @default(now())
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  sentAt        DateTime?
+  lastError     String?
+
+  @@index([sentAt, nextAttemptAt, id])
+}
