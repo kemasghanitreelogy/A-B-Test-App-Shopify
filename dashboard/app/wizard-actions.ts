@@ -506,7 +506,7 @@ export async function createComponentExperiment(input: CreateComponentInput): Pr
   return { experimentId: experiment.id, warnings };
 }
 
-/** Produk untuk keranjang contoh di preview drawer (aturan katalog: vendor ≠ TEST, harga > 0). */
+/** Produk untuk keranjang contoh di preview drawer (aturan katalog: vendor bukan TEST/Landing Page/Gift, harga > 0). */
 export async function loadDrawerSampleProducts(): Promise<{ error?: string; products?: SampleProduct[] }> {
   await requireAdmin();
   try {

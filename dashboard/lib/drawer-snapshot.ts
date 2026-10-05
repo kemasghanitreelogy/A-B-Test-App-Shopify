@@ -126,7 +126,10 @@ export interface SampleProduct {
   variants: Array<{ id: number; title: string; price: number }>;
 }
 
-/** Products a sample cart can hold: the real catalog rule (vendor ≠ TEST, price > 0). */
+/** Vendors kept out of the catalog: LP-funnel listings, their gifts, and the legacy TEST name. */
+const HIDDEN_VENDORS = new Set(["TEST", "Landing Page", "Gift"]);
+
+/** Products a sample cart can hold: the real catalog rule (vendor ∉ HIDDEN_VENDORS, price > 0). */
 export async function sampleProducts(): Promise<SampleProduct[]> {
   const res = await fetch(`https://${storeDomain()}/products.json?limit=250`, {
     headers: { "User-Agent": UA, Accept: "application/json" },
@@ -142,7 +145,7 @@ export async function sampleProducts(): Promise<SampleProduct[]> {
     }>;
   };
   return data.products
-    .filter((p) => p.vendor !== "TEST")
+    .filter((p) => !HIDDEN_VENDORS.has(p.vendor))
     .map((p) => ({
       handle: p.handle,
       title: p.title,
