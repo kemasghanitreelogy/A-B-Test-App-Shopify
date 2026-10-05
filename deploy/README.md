@@ -49,6 +49,25 @@ embed) tidak ikut deploy ini — dirilis lewat `shopify app deploy`. Setelah
 `SHOPIFY_APP_URL` berubah, endpoint web pixel harus diperbarui lewat aksi bridge
 `pixel.ensure`.
 
+## Database
+
+Supabase project **treelogy-ab** (`yeiadvzyphcnwovdozlc`, ap-southeast-1, Pro), Postgres 17.
+App dan dashboard login sebagai role `treelogy_ab`, pemilik schema `treelogy_ab` saja:
+bukan superuser, tanpa bypass RLS, tanpa CREATE di database/`public`, tidak terekspos
+lewat Data API. Search path default role = `treelogy_ab`, jadi raw SQL tanpa prefix
+schema tetap jalan (juga lewat transaction pooler).
+
+- App (VPS): session pooler `:5432`, `connection_limit=5` (dua slot bisa hidup bersamaan).
+- Dashboard (Vercel, serverless): transaction pooler `:6543` dengan `pgbouncer=true&connection_limit=1`.
+
+Pindah dari Neon + Fly pada 2026-10-05 tanpa event hilang: data disalin saat Fly masih
+melayani, sequence Supabase dimulai 100 juta di atas Neon supaya kedua sisi bisa
+menulis bersamaan tanpa bentrok id, traffic dipindah (`shopify app deploy`,
+`pixel.ensure`, env Vercel), lalu baris yang masih masuk ke Neon digabung secara
+idempoten (yang lebih baru menang). Token offline Shopify diserahkan sekali dari Neon
+ke Supabase dan refresh token di Neon dikosongkan — Shopify merotasi refresh token,
+jadi hanya satu sisi boleh memegangnya.
+
 ## Mengubah tooling deploy
 
 Server menjalankan salinan terpasang. Setelah mengubah apa pun di `deploy/`:
