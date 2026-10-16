@@ -9,7 +9,7 @@
  * Taksonomi event PostHog untuk eksperimen A/B.
  *
  * SATU-SATUNYA tempat nama event, nama properti, flag key, dan pemetaan variant
- * didefinisikan. Dipakai app Fly.io (pengirim), dashboard Vercel (pembaca hasil),
+ * didefinisikan. Dipakai app Shopify (pengirim), dashboard (pembaca hasil),
  * dan diverifikasi lawan skrip storefront oleh scripts/verify-posthog.mjs.
  *
  * File ini sengaja bebas dependency dan bebas efek samping supaya bisa disalin

@@ -1,38 +1,59 @@
 # Deploy ke VPS
 
-Produksi berjalan di `vps-utama` (IDCloudHost, 203.145.35.26, alias SSH `treelogy-vps`),
-berdampingan dengan layanan Treelogy dan combined-discount, di
-**https://ab.treelogy-services.my.id**.
+Seluruh produksi — app Shopify **dan** dashboard — berjalan di `vps-utama` (IDCloudHost,
+203.145.35.26, alias SSH `treelogy-vps`), berdampingan dengan layanan Treelogy dan
+combined-discount. Tidak ada yang berjalan di Vercel atau Fly.
+
+| Komponen | URL | Slot | User / unit |
+|---|---|---|---|
+| `app` — app Shopify (react-router) | https://ab.treelogy-services.my.id | 127.0.0.1:3300 / 3301 | `treelogy-ab` / `treelogy-ab@<port>` |
+| `dash` — dashboard (Next.js standalone) | https://dash.treelogy-services.my.id | 127.0.0.1:3310 / 3311 | `treelogy-ab-dash` / `treelogy-ab-dash@<port>` |
 
 ```
-                                  ┌─▶ 127.0.0.1:3300  treelogy-ab@3300  (blue)
-Shopify / storefront ──HTTPS──▶ nginx :443 ──┤        satu slot live, satu idle
-                                  └─▶ 127.0.0.1:3301  treelogy-ab@3301  (green)
-                                              │
-Dashboard (Vercel) ─────────────────────────┐ └──TLS──▶ Supabase Postgres (schema treelogy_ab)
-                                            └──TLS──▶ (pooler transaction mode, pgbouncer=true)
+Shopify / storefront ──┐                   ┌─ ab.*   ─▶ :3300 | :3301  app (blue/green)
+                       ├─HTTPS─▶ nginx ────┤                   ▲ /internal/action (HMAC)
+Tim (browser) ─────────┘          :443     └─ dash.* ─▶ :3310 | :3311  dashboard (blue/green)
+                                                           │
+                         Supabase Postgres (schema treelogy_ab) ◀──TLS──┘
+                         app → session pooler :5432 · dashboard → transaction pooler :6543
 ```
 
-| Apa | Di mana |
+Dashboard sengaja user Linux terpisah: ia tidak bisa membaca `/etc/treelogy-ab/env`, jadi
+access token Shopify tetap hanya di app, dan dashboard menyentuh Shopify hanya lewat bridge.
+
+| Apa | Di mana (`<c>` = `treelogy-ab` atau `treelogy-ab-dash`) |
 |---|---|
-| Slot live | `/etc/nginx/conf.d/treelogy-ab-upstream.conf` (ditulis oleh perintah deploy) |
-| Kode live | `/opt/treelogy-ab/current` → `releases/<utc>-<sha>`; tiap slot menjalankan `slots/<port>` |
-| Rahasia | `/etc/treelogy-ab/env` (root:treelogy-ab, 640) — template: `deploy/env.example` |
-| Service | `/etc/systemd/system/treelogy-ab@.service` (template, instance = port) |
+| Slot live | `/etc/nginx/conf.d/<c>-upstream.conf` (ditulis oleh perintah deploy) |
+| Kode live | `/opt/<c>/current` → `releases/<utc>-<sha>`; tiap slot menjalankan `slots/<port>` |
+| Rahasia | `/etc/<c>/env` (root:<c>, 640) — template: `deploy/env.example`, `deploy/dashboard.env.example` |
+| Service | `/etc/systemd/system/<c>@.service` (template, instance = port) |
 | Perintah deploy | `/usr/local/sbin/treelogy-ab-deploy` (salinan `deploy/bin/deploy.sh`) |
-| Log | `journalctl -u 'treelogy-ab@*' -f`, `/var/log/nginx/treelogy-ab.*.log` |
+| Log | `journalctl -u 'treelogy-ab@*' -u 'treelogy-ab-dash@*' -f`, `/var/log/nginx/treelogy-ab*.log` |
 
 ## Deploy
 
 Push ke GitHub, lalu:
 
 ```sh
-npm run deploy:vps                  # deploy origin/main
-npm run deploy:vps -- <sha|branch>
+npm run deploy:vps                          # app + dashboard dari origin/main (satu SHA)
+npm run deploy:vps -- <sha|branch>          # idem, ref lain
+npm run deploy:vps -- app|dash [ref]        # satu komponen saja
 ssh treelogy-vps sudo treelogy-ab-deploy status
-ssh treelogy-vps sudo treelogy-ab-deploy rollback   # rilis sebelumnya, tanpa build ulang
-ssh treelogy-vps sudo treelogy-ab-deploy restart    # setelah mengubah /etc/treelogy-ab/env
+ssh treelogy-vps sudo treelogy-ab-deploy rollback app|dash   # rilis sebelumnya, tanpa build ulang
+ssh treelogy-vps sudo treelogy-ab-deploy restart [app|dash]  # setelah mengubah env (default: keduanya)
 ```
+
+Default-nya kedua komponen dibangun dari commit yang sama: `lib/stats.ts` dkk. disalin
+dari app ke dashboard, dan satu SHA menjamin keduanya menghitung hasil dengan rumus yang
+sama. Keduanya dibangun dulu (berurutan — dua build Next/Vite sekaligus bisa membuat
+layanan lain di box ini kena OOM), baru migrasi, lalu app live, lalu dashboard live.
+Build yang gagal tidak mengubah apa pun.
+
+Dashboard membaca env file juga saat **build**: `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`
+dan `NEXT_PUBLIC_*` tertanam di build, jadi setelah mengubahnya deploy ulang `dash`,
+`restart` saja tidak cukup. Kunci Server Action yang tetap + `deploymentId` per SHA
+membuat tab yang dibuka sebelum deploy melakukan reload penuh, bukan error
+"Failed to find Server Action".
 
 Deploy blue/green tanpa downtime: build di direktori rilis baru (tiap langkah dicek),
 `prisma migrate deploy`, start di slot **idle**, `/healthz` (menyentuh DB) + smoke
@@ -57,8 +78,9 @@ bukan superuser, tanpa bypass RLS, tanpa CREATE di database/`public`, tidak tere
 lewat Data API. Search path default role = `treelogy_ab`, jadi raw SQL tanpa prefix
 schema tetap jalan (juga lewat transaction pooler).
 
-- App (VPS): session pooler `:5432`, `connection_limit=5` (dua slot bisa hidup bersamaan).
-- Dashboard (Vercel, serverless): transaction pooler `:6543` dengan `pgbouncer=true&connection_limit=1`.
+- App: session pooler `:5432`, `connection_limit=5` (dua slot bisa hidup bersamaan).
+- Dashboard: transaction pooler `:6543` dengan `pgbouncer=true&connection_limit=5`, supaya
+  tidak ikut memakan kuota koneksi session pooler milik app.
 
 Pindah dari Neon + Fly pada 2026-10-05 tanpa event hilang: data disalin saat Fly masih
 melayani, sequence Supabase dimulai 100 juta di atas Neon supaya kedua sisi bisa
@@ -74,6 +96,6 @@ Server menjalankan salinan terpasang. Setelah mengubah apa pun di `deploy/`:
 
 ```sh
 rsync -a --delete deploy/ treelogy-vps:/tmp/ab-deploy/
-ssh treelogy-vps sudo /tmp/ab-deploy/bin/bootstrap.sh host
-ssh treelogy-vps sudo /tmp/ab-deploy/bin/bootstrap.sh tls
+ssh treelogy-vps sudo /tmp/ab-deploy/bin/bootstrap.sh host app    # atau: dash
+ssh treelogy-vps sudo /tmp/ab-deploy/bin/bootstrap.sh tls  app    # atau: dash
 ```

@@ -16,8 +16,11 @@ Sistemnya terdiri dari dua aplikasi:
 
 | | Di mana | Tugas |
 |---|---|---|
-| **App Shopify** (repo ini) | Fly.io `sin` | OAuth, webhook, app proxy, theme app extension, satu-satunya pemegang access token Shopify |
-| **[Dashboard](dashboard/)** | Vercel | UI kontrol + analitik. Baca Neon langsung; aksi yang menyentuh Shopify di-relay lewat bridge HMAC |
+| **App Shopify** (repo ini) | VPS — `ab.treelogy-services.my.id` | OAuth, webhook, app proxy, theme app extension, satu-satunya pemegang access token Shopify |
+| **[Dashboard](dashboard/)** | VPS — `dash.treelogy-services.my.id` | UI kontrol + analitik. Baca database langsung; aksi yang menyentuh Shopify di-relay lewat bridge HMAC |
+
+Keduanya berjalan di satu VPS, masing-masing blue/green tanpa downtime — lihat
+[`deploy/README.md`](deploy/README.md).
 
 ---
 
@@ -54,7 +57,7 @@ tambahan latency. Variant B dirender penuh oleh Shopify, bukan hasil manipulasi 
 ## Struktur
 
 ```
-app/                      APP SHOPIFY (Fly.io)
+app/                      APP SHOPIFY
   lib/
     bucketing.ts          hash FNV-1a — HARUS identik dengan versi storefront
     stats.ts              z-test, Bayesian, Welch t-test, SRM, sample size
@@ -88,7 +91,7 @@ scripts/
   verify-posthog.mjs            taksonomi, paritas literal storefront, bentuk metric, pembaca hasil
   sync-dashboard.mjs            menyalin schema + statistik ke dashboard, dan mengecek drift
 
-dashboard/                DASHBOARD (Vercel) — lihat dashboard/README.md
+dashboard/                DASHBOARD (Next.js) — lihat dashboard/README.md
   app/(app)/              daftar eksperimen, detail + grafik, audit log
   app/(app)/experiments/new  wizard 5 langkah: halaman -> variant B -> snapshot -> tracking -> konfigurasi
   app/api/snapshot/       proxy HTML storefront untuk iframe (script dibuang, wajib login)
@@ -155,7 +158,7 @@ menampilkannya berdampingan dengan perhitungan lokal di panel **Acuan PostHog**.
 Desain lengkapnya ada di
 [`claudedocs/SPEC-posthog-integration.md`](claudedocs/SPEC-posthog-integration.md).
 
-Env tambahan di Fly.io (dashboard tidak butuh apa pun):
+Env tambahan di app, `/etc/treelogy-ab/env` (dashboard tidak butuh apa pun):
 
 ```bash
 POSTHOG_PROJECT_TOKEN="phc_..."          # capture event

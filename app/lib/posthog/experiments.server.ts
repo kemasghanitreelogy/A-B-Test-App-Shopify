@@ -14,7 +14,7 @@ import { captureConfigured, outboxBacklog, repairPendingExposureNames } from "./
  *      Experiment.posthogSyncError dan ditampilkan di dashboard.
  *   2. Tidak ada tebakan bentuk API. Endpoint dan body mengikuti Experiments API
  *      dan skema tool MCP PostHog yang diverifikasi saat integrasi ini ditulis.
- *   3. Kunci hanya ada di app Fly.io. Dashboard membaca hasil lewat bridge.
+ *   3. Kunci hanya ada di app Shopify. Dashboard membaca hasil lewat bridge.
  *
  * Endpoint yang dipakai (base: POSTHOG_API_HOST, default https://us.posthog.com):
  *   POST /api/projects/:pid/experiments/                       buat draft (+ flag)

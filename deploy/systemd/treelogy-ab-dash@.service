@@ -1,0 +1,65 @@
+# /etc/systemd/system/treelogy-ab-dash@.service
+#
+# Treelogy A/B dashboard (Next.js standalone), one instance per blue/green
+# slot: %i is the port (3310 or 3311). Same model as treelogy-ab@.service:
+# the deploy script starts the idle slot on the new release, health-checks it,
+# flips nginx (/etc/nginx/conf.d/treelogy-ab-dash-upstream.conf), then stops
+# the old slot.
+#
+# Runs as its own user so it cannot read /etc/treelogy-ab/env: the Shopify
+# access token stays with the app, and the dashboard reaches Shopify only
+# through the HMAC bridge.
+[Unit]
+Description=Treelogy A/B dashboard, slot %i (127.0.0.1:%i, behind nginx)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=treelogy-ab-dash
+Group=treelogy-ab-dash
+WorkingDirectory=/opt/treelogy-ab-dash/slots/%i
+EnvironmentFile=/etc/treelogy-ab-dash/env
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=%i
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+
+# Next writes its data cache (fetch revalidate) and image cache to .next/cache
+# inside the release; everything else stays read-only.
+ReadWritePaths=/opt/treelogy-ab-dash/releases
+
+# Resource ceiling: the box is shared with the Treelogy services.
+MemoryHigh=512M
+MemoryMax=640M
+TasksMax=256
+
+# Hardening. MemoryDenyWriteExecute is deliberately absent: V8's JIT needs W+X pages.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

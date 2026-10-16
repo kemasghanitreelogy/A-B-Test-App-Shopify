@@ -23,7 +23,7 @@ import { tr } from "@/lib/i18n";
  * Audit lengkap satu eksperimen: semua data per variant di satu halaman.
  *
  * Dua sumber dengan peran berbeda, sengaja ditampilkan terpisah:
- *   1. Neon (lokal) — pengunjung terpapar, add-to-cart, order, revenue. Order
+ *   1. Database (lokal) — pengunjung terpapar, add-to-cart, order, revenue. Order
  *      berasal dari webhook, kebal ad-blocker. INI yang menentukan pemenang.
  *   2. PostHog (posthog-js di storefront) — pageview, sesi, scroll, rage click,
  *      web vitals, heatmap, replay. Menjelaskan KENAPA sebuah variant menang atau

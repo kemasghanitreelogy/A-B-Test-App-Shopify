@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
- * Autentikasi untuk endpoint internal yang dipanggil dashboard Vercel.
+ * Autentikasi untuk endpoint internal yang dipanggil dashboard.
  *
  * Dashboard tidak memegang access token Shopify — hanya app ini yang memegangnya.
  * Jadi aksi apa pun yang menyentuh Shopify (membuat template, menerbitkan

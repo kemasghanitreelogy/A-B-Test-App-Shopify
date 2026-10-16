@@ -12,7 +12,7 @@ const scrypt = promisify(scryptCallback) as (
  * Hashing password dengan scrypt bawaan Node.
  *
  * Dipilih scrypt, bukan bcrypt atau argon2 dari npm, karena keduanya butuh modul
- * native yang harus dikompilasi ulang untuk runtime Vercel. scrypt sudah ada di
+ * native yang harus dikompilasi ulang untuk tiap runtime. scrypt sudah ada di
  * Node, sudah lolos audit, dan tahan terhadap serangan berbasis GPU.
  */
 const PARAMS = { N: 32768, r: 8, p: 1, maxmem: 96 * 1024 * 1024 };

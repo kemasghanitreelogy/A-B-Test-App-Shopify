@@ -5,7 +5,7 @@ import { copyTemplateTranslations, type TranslationCopyResult } from "./translat
  * Analisis theme untuk wizard pemilihan halaman.
  *
  * Semua fungsi di sini butuh token Admin, jadi hanya boleh dipanggil dari app ini
- * (Fly.io) — bukan dari dashboard. Token offline berumur satu jam dan di-refresh
+ * (VPS) — bukan dari dashboard. Token offline berumur satu jam dan di-refresh
  * oleh library di sini; dashboard tidak memegang token sama sekali.
  */
 

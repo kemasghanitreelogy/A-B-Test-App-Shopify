@@ -2,15 +2,21 @@
 # One-time (idempotent) server setup for treelogy-ab. Runs as root on the
 # VPS from a checkout of this repo's deploy/ directory.
 #
-#   bootstrap.sh host    swap, service user, directories, env file, slot units, deploy command
-#   bootstrap.sh tls     certificate + nginx vhost (needs DNS pointing at this box)
+#   bootstrap.sh host [app|dash]   swap, service user, directories, env file, slot units, deploy command
+#   bootstrap.sh tls  [app|dash]   certificate + nginx vhost (needs DNS pointing at this box)
+#
+# The component defaults to app. Both share the deploy command and swap.
 set -Eeuo pipefail
 
-readonly APP=treelogy-ab
-readonly DOMAIN=ab.treelogy-services.my.id
+readonly HERE=$(cd "$(dirname "$0")/.." && pwd)   # the deploy/ directory
+case ${2:-app} in
+  app)  APP=treelogy-ab      DOMAIN=ab.treelogy-services.my.id   UPSTREAM=treelogy_ab      PORT=3300 ENV_TEMPLATE=env.example ;;
+  dash) APP=treelogy-ab-dash DOMAIN=dash.treelogy-services.my.id UPSTREAM=treelogy_ab_dash PORT=3310 ENV_TEMPLATE=dashboard.env.example ;;
+  *)    echo "unknown component: $2 (app|dash)" >&2; exit 1 ;;
+esac
+readonly APP DOMAIN UPSTREAM PORT ENV_TEMPLATE
 readonly BASE=/opt/$APP
 readonly ENV_DIR=/etc/$APP
-readonly HERE=$(cd "$(dirname "$0")/.." && pwd)   # the deploy/ directory
 
 log() { printf '\033[1;34m[bootstrap]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -34,12 +40,12 @@ host() {
   install -d -o root -g "$APP" -m 750 "$ENV_DIR"
   if [[ ! -f $ENV_DIR/env ]]; then
     log "writing $ENV_DIR/env from template — fill in the secrets before the first deploy"
-    install -o root -g "$APP" -m 640 "$HERE/env.example" "$ENV_DIR/env"
+    install -o root -g "$APP" -m 640 "$HERE/$ENV_TEMPLATE" "$ENV_DIR/env"
   fi
 
   # Root-owned and outside the app's directory: this script runs as root, so
   # the service user must not be able to rewrite it.
-  install -o root -g root -m 755 "$HERE/bin/deploy.sh" /usr/local/sbin/$APP-deploy
+  install -o root -g root -m 755 "$HERE/bin/deploy.sh" /usr/local/sbin/treelogy-ab-deploy
   install -o root -g root -m 644 "$HERE/systemd/$APP@.service" "/etc/systemd/system/$APP@.service"
   # The single-instance unit predates blue/green slots. Only removed once it no
   # longer serves anything — bootstrap must never take the live app down.
@@ -49,7 +55,7 @@ host() {
     rm -f "/etc/systemd/system/$APP.service"
   fi
   systemctl daemon-reload
-  log "host ready. next: fill $ENV_DIR/env, then: sudo $APP-deploy"
+  log "host ready. next: fill $ENV_DIR/env, then: sudo treelogy-ab-deploy"
 }
 
 tls() {
@@ -76,12 +82,12 @@ EOF
       --non-interactive --agree-tos --register-unsafely-without-email --keep-until-expiring
   fi
 
-  # The vhost proxies to `upstream treelogy_ab`, which the deploy script
+  # The vhost proxies to `upstream $UPSTREAM`, which the deploy script
   # owns. Seed it on a fresh server so the vhost loads before the first deploy.
   local upstream=/etc/nginx/conf.d/$APP-upstream.conf
-  [[ -f $upstream ]] || printf '%s\n' "# Managed by $APP-deploy — the live blue/green slot. Do not edit by hand." \
-    'upstream treelogy_ab {' '    server 127.0.0.1:3300;' '    keepalive 16;' '}' \
-    'map $remote_addr $treelogy_ab_slot {' '    127.0.0.1 $upstream_addr;' '    default   "";' '}' > "$upstream"
+  [[ -f $upstream ]] || printf '%s\n' "# Managed by treelogy-ab-deploy — the live blue/green slot. Do not edit by hand." \
+    "upstream $UPSTREAM {" "    server 127.0.0.1:$PORT;" '    keepalive 16;' '}' \
+    "map \$remote_addr \$${UPSTREAM}_slot {" '    127.0.0.1 $upstream_addr;' '    default   "";' '}' > "$upstream"
 
   install -o root -g root -m 644 "$HERE/nginx/$DOMAIN.conf" "$site"
   ln -sfn "$site" /etc/nginx/sites-enabled/$DOMAIN
@@ -98,5 +104,5 @@ EOF
 case ${1:-} in
   host) host ;;
   tls)  tls ;;
-  *)    sed -n '2,7p' "$0"; exit 1 ;;
+  *)    sed -n '2,9p' "$0"; exit 1 ;;
 esac

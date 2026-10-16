@@ -1,5 +1,5 @@
 /**
- * Menyalin kode yang harus identik antara app Shopify (Fly.io) dan dashboard (Vercel).
+ * Menyalin kode yang harus identik antara app Shopify dan dashboard.
  *
  * Keduanya adalah aplikasi terpisah dengan node_modules sendiri, tapi berbicara ke
  * database yang sama dan harus menghitung statistik dengan cara yang sama persis.

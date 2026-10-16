@@ -88,7 +88,7 @@ export async function analyticsFor(experiment: Experiment): Promise<PostHogAnaly
   const out: PostHogAnalytics = { since: since.toISOString(), flagKey, engagement: [], devices: [], countries: [], daily: [], replays: [], pages: [], empty: true, errors };
 
   if (!experimentsApiConfigured()) {
-    errors.push("PostHog Experiments API belum dikonfigurasi di app Fly.io.");
+    errors.push("PostHog Experiments API belum dikonfigurasi di app Shopify.");
     return out;
   }
 
@@ -271,7 +271,7 @@ export async function heatmapFor(experiment: Experiment, params: HeatmapParams):
   const out: PostHogHeatmap = { type: params.type, viewport: params.viewport, path, a: empty("A"), b: empty("B"), errors, widths: [], widthBucket: null, renderWidth: range.width };
 
   if (!experimentsApiConfigured()) {
-    errors.push("PostHog Experiments API belum dikonfigurasi di app Fly.io.");
+    errors.push("PostHog Experiments API belum dikonfigurasi di app Shopify.");
     return out;
   }
 

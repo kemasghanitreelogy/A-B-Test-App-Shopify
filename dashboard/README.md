@@ -1,17 +1,21 @@
 # Dashboard Treelogy A/B
 
 Dashboard kontrol dan analitik untuk A/B test halaman produk. Next.js 16 App Router,
-deploy ke Vercel, membaca database Neon yang sama dengan app Shopify di Fly.io.
+berjalan di VPS di https://dash.treelogy-services.my.id, membaca database yang sama
+dengan app Shopify.
 
 ## Kenapa terpisah dari app Shopify
 
-App Shopify di Fly.io memegang satu-satunya hal yang tidak boleh digandakan:
-**access token Shopify**. Dashboard ini tidak punya dan tidak boleh punya token itu.
+App Shopify memegang satu-satunya hal yang tidak boleh digandakan: **access token
+Shopify**. Dashboard ini tidak punya dan tidak boleh punya token itu. Keduanya berjalan
+di VPS yang sama, tapi sebagai user Linux yang berbeda — dashboard tidak bisa membaca
+env file app.
 
 ```
-Vercel (dashboard ini)              Fly.io (app Shopify)
+dash.treelogy-services.my.id        ab.treelogy-services.my.id
+(dashboard ini)                     (app Shopify)
   │                                   │
-  ├─ baca/tulis Neon langsung         ├─ OAuth + access token
+  ├─ baca/tulis database langsung     ├─ OAuth + access token
   │    semua analitik & pengaturan    ├─ webhook orders/paid
   │                                   ├─ app proxy /apps/tl-ab/collect
   └─ POST /internal/action ─────────► └─ Shopify Admin API
@@ -20,7 +24,7 @@ Vercel (dashboard ini)              Fly.io (app Shopify)
 ```
 
 Aksi yang menyentuh Shopify — menjalankan, menjeda, kill switch, menerbitkan ulang
-config — di-relay lewat bridge. Sisanya ditulis langsung ke Neon.
+config — di-relay lewat bridge. Sisanya ditulis langsung ke database.
 
 ## Menjalankan lokal
 
@@ -56,47 +60,41 @@ Script memuat `.env.local` lewat `--env-file-if-exists`. Untuk menulis ke databa
 produksi dari lokal, timpa saja variabelnya:
 
 ```bash
-DATABASE_URL="postgresql://...neon.tech/..." npm run create-user -- \
+DATABASE_URL="postgresql://...pooler.supabase.com:6543/..." npm run create-user -- \
   --email kamu@treelogy.com --name "Nama" --role admin
 ```
 
 Migrasi database **tidak** dijalankan dari sini. Skema dimiliki repo root dan
-di-migrate saat deploy Fly.io. Kalau keduanya boleh migrate, dua deploy yang
+di-migrate saat deploy app. Kalau keduanya boleh migrate, dua deploy yang
 berjalan bersamaan bisa saling menimpa.
 
 ## Environment variable
 
+Di produksi semuanya ada di `/etc/treelogy-ab-dash/env` di VPS (template:
+[`deploy/dashboard.env.example`](../deploy/dashboard.env.example)).
+
 | Variable | Keterangan |
 |---|---|
-| `DATABASE_URL` | Neon, connection string **pooled** |
+| `DATABASE_URL` | Supabase, **transaction pooler** `:6543` dengan `pgbouncer=true` |
 | `SESSION_SECRET` | penandatangan cookie sesi, minimal 32 karakter (`openssl rand -base64 48`) |
-| `SHOPIFY_APP_URL` | URL app Fly.io, mis. `https://treelogy-ab.fly.dev` |
-| `INTERNAL_API_SECRET` | **harus persis sama** dengan nilai di Fly.io, kalau beda semua aksi ditolak 401 |
-| `SHOPIFY_SHOP_DOMAIN` | `treelogymoringa.myshopify.com` |
+| `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | kunci AES Server Action yang sama untuk semua rilis (`openssl rand -base64 32`); dibaca saat build |
+| `SHOPIFY_APP_URL` | `https://ab.treelogy-services.my.id` |
+| `INTERNAL_API_SECRET` | **harus persis sama** dengan nilai di env app, kalau beda semua aksi ditolak 401 |
+| `SHOPIFY_SHOP_DOMAIN` | `prkdg7-jt.myshopify.com` |
+| `STOREFRONT_DOMAIN` | `treelogy.com` |
 
-## Deploy ke Vercel
+## Deploy
 
-Aplikasi ini ada di subdirektori repo, jadi linknya harus level repo:
-
-```bash
-npm i -g vercel
-vercel login
-vercel link --repo          # WAJIB --repo untuk project di subdirektori
-```
-
-Di dashboard Vercel, set **Root Directory** ke `dashboard`. Lalu:
+Dashboard di-deploy bersama app dari commit yang sama, blue/green di VPS
+(`output: "standalone"`, slot 127.0.0.1:3310/3311). Lihat
+[`deploy/README.md`](../deploy/README.md):
 
 ```bash
-vercel env add DATABASE_URL production
-vercel env add SESSION_SECRET production
-vercel env add SHOPIFY_APP_URL production
-vercel env add INTERNAL_API_SECRET production
-vercel env add SHOPIFY_SHOP_DOMAIN production
-
-vercel --prod
+npm run deploy:vps                 # dari root repo: app + dashboard
+npm run deploy:vps -- dash         # dashboard saja
 ```
 
-Setelah itu buat akun pertama — lihat **Membuat akun** di atas.
+Setelah deploy pertama di server baru, buat akun pertama — lihat **Membuat akun** di atas.
 
 ## Peran
 

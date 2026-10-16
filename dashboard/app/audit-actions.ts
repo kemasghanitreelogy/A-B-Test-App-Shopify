@@ -13,7 +13,7 @@ export interface HeatmapResult {
 
 /**
  * Heatmap per variant untuk satu halaman produk. Dibaca lewat bridge karena
- * kunci PostHog hanya ada di app Fly.io.
+ * kunci PostHog hanya ada di app Shopify.
  */
 export async function loadHeatmap(
   experimentId: string,

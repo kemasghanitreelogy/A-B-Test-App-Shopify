@@ -4,7 +4,7 @@ import { ingestCollectPayload, parseCollectPayload } from "../lib/collect.server
 
 /**
  * Endpoint pengumpul event KHUSUS web pixel:
- *   https://treelogy-ab.fly.dev/pixel/collect
+ *   https://ab.treelogy-services.my.id/pixel/collect
  *
  * Kenapa tidak lewat App Proxy seperti skrip storefront. Sandbox web pixel milik
  * Shopify menolak fetch ke origin toko sendiri (`RestrictedUrlError: Requests

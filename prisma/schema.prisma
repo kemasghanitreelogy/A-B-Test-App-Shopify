@@ -310,7 +310,7 @@ model WebhookLog {
   @@index([receivedAt])
 }
 
-/// User dashboard Next.js di Vercel. Terpisah dari Session (yang milik OAuth Shopify).
+/// User dashboard Next.js. Terpisah dari Session (yang milik OAuth Shopify).
 model AdminUser {
   id           String    @id @default(cuid())
   email        String    @unique

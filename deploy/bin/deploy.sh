@@ -1,34 +1,57 @@
 #!/usr/bin/env bash
 # Zero-downtime blue/green deploy for treelogy-ab on the VPS. Runs as root.
 #
-#   deploy.sh [git-ref]     build <git-ref> (default: main) and make it live
-#   deploy.sh rollback      make the previous release live again (no rebuild)
-#   deploy.sh restart       re-launch the live release on the other slot, e.g. to
-#                           pick up a changed env file — no rebuild, no downtime
-#   deploy.sh status        show the live slot and the available releases
+#   deploy.sh [all|app|dash] [git-ref]   build <git-ref> (default: main) and make it live;
+#                                        `all` (the default) builds both from one SHA
+#   deploy.sh rollback [app|dash]        make the previous release live again (no rebuild)
+#   deploy.sh restart  [app|dash|all]    re-launch the live release on the other slot, e.g.
+#                                        to pick up a changed env file — no rebuild, no downtime
+#   deploy.sh status                     show the live slot and the available releases
 #
-# Two slots, 127.0.0.1:3300 and :3301, each a treelogy-ab@<port> unit
-# running the release its slots/<port> symlink points at. A deploy builds a new
-# release, starts it on the idle slot, and only once that slot answers /healthz
-# does nginx switch to it — via a graceful reload, so in-flight requests finish
-# on the old slot. A release that fails anywhere before the switch never takes
-# traffic; one that misbehaves right after it is switched back while the old
-# slot is still running.
+# Two components, each with two slots behind its own nginx upstream:
+#   app   Shopify app (react-router)  127.0.0.1:3300/3301  ab.treelogy-services.my.id
+#   dash  dashboard (Next.js)         127.0.0.1:3310/3311  dash.treelogy-services.my.id
+# Each slot is a <unit>@<port> systemd instance running the release its
+# slots/<port> symlink points at. A deploy builds a new release, starts it on
+# the idle slot, and only once that slot answers its health probe does nginx
+# switch to it — via a graceful reload, so in-flight requests finish on the old
+# slot. A release that fails anywhere before the switch never takes traffic;
+# one that misbehaves right after it is switched back while the old slot is
+# still running.
+#
+# `all` builds the app and the dashboard from the same commit: lib/stats.ts and
+# friends are copied from the app into the dashboard, and one SHA guarantees
+# both sides compute results with the same formulas.
 set -Eeuo pipefail
 
-readonly APP=treelogy-ab
-readonly BASE=/opt/$APP
 readonly REPO_URL=https://github.com/kemasghanitreelogy/A-B-Test-App-Shopify.git
-readonly MIRROR=$BASE/repo.git
-readonly RELEASES=$BASE/releases
-readonly SLOTS=$BASE/slots
-readonly CURRENT=$BASE/current
-readonly ENV_FILE=/etc/$APP/env
-readonly UPSTREAM_CONF=/etc/nginx/conf.d/$APP-upstream.conf
-readonly DOMAIN=ab.treelogy-services.my.id
-readonly PORTS=(3300 3301)
+readonly MIRROR=/opt/treelogy-ab/repo.git
 readonly KEEP_RELEASES=5
 readonly DRAIN_SECONDS=10
+
+# Per-component settings, selected with use_component.
+APP= BASE= RELEASES= SLOTS= CURRENT= ENV_FILE= UPSTREAM= UPSTREAM_CONF= SLOT_VAR= DOMAIN=
+RUN_DIR= HEALTH_PATH=
+PORTS=() SMOKE_PATHS=()
+
+use_component() {
+  case $1 in
+    app)
+      APP=treelogy-ab UPSTREAM=treelogy_ab DOMAIN=ab.treelogy-services.my.id
+      PORTS=(3300 3301) RUN_DIR=. HEALTH_PATH=/healthz
+      # /healthz proves the process and the database; it can't see a route
+      # that breaks on its own. Smoke the pages Shopify loads.
+      SMOKE_PATHS=(/ /auth/login) ;;
+    dash)
+      APP=treelogy-ab-dash UPSTREAM=treelogy_ab_dash DOMAIN=dash.treelogy-services.my.id
+      PORTS=(3310 3311) RUN_DIR=dashboard/.next/standalone HEALTH_PATH=/api/healthz
+      SMOKE_PATHS=(/login) ;;
+    *) die "unknown component: $1 (app|dash)" ;;
+  esac
+  BASE=/opt/$APP RELEASES=/opt/$APP/releases SLOTS=/opt/$APP/slots CURRENT=/opt/$APP/current
+  ENV_FILE=/etc/$APP/env UPSTREAM_CONF=/etc/nginx/conf.d/$APP-upstream.conf
+  SLOT_VAR=${UPSTREAM}_slot
+}
 
 log() { printf '\033[1;34m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -37,11 +60,13 @@ die() { printf '\033[1;31m[error]\033[0m %s\n' "$*" >&2; exit 1; }
 
 # One deploy at a time: two builds racing for the same slot is how you get a
 # release nobody built.
-exec 9>/run/lock/$APP-deploy.lock
+exec 9>/run/lock/treelogy-ab-deploy.lock
 flock -n 9 || die "another deploy is already running"
 
 # Build steps run as the service user so nothing it produces is root-owned.
 as_app() { runuser -u "$APP" -- env HOME="$BASE" npm_config_cache="$BASE/.npm" "$@"; }
+# The git mirror belongs to the app user whichever component is being built.
+as_git() { runuser -u treelogy-ab -- env HOME=/opt/treelogy-ab "$@"; }
 
 # prisma reads DATABASE_URL from the environment; load the env file into a
 # subshell only, so secrets never land in this script's own environment.
@@ -74,24 +99,22 @@ previous_release() {
     done
 }
 
-# Poll a slot's /healthz. Neon's free tier suspends idle computes, so the first
-# query can take a few seconds to wake it; 60s covers that. A slot that keeps
-# crashing is given up on at its second automatic restart instead.
+# Poll a slot's health probe for up to 60s (a cold Next.js server or a slow
+# first DB connection). A slot that keeps crashing is given up on at its second
+# automatic restart instead.
 slot_healthy() {
   local port=$1 unit=$APP@$1 restarts
   restarts=$(systemctl show -p NRestarts --value "$unit")
   for _ in $(seq 1 30); do
-    curl -fsS --max-time 5 "http://127.0.0.1:$port/healthz" >/dev/null 2>&1 && return 0
+    curl -fsS --max-time 5 "http://127.0.0.1:$port$HEALTH_PATH" >/dev/null 2>&1 && return 0
     (( $(systemctl show -p NRestarts --value "$unit") - restarts >= 2 )) && return 1
     sleep 2
   done
   return 1
 }
 
-# /healthz proves the process and the database; it can't see a route that
-# breaks on its own. Smoke the pages Shopify loads on the idle slot directly,
-# before it gets any traffic.
-readonly SMOKE_PATHS=(/ /auth/login)
+# Smoke the component's key pages on the idle slot directly, before it gets
+# any traffic.
 slot_smoke() {
   local port=$1 path code
   for path in "${SMOKE_PATHS[@]}"; do
@@ -102,11 +125,18 @@ slot_smoke() {
 
 start_slot() {
   local port=$1 rel=$2
-  ln -sfn "$rel" "$SLOTS/$port.next" && mv -T "$SLOTS/$port.next" "$SLOTS/$port"
+  ln -sfn "$rel/$RUN_DIR" "$SLOTS/$port.next" && mv -T "$SLOTS/$port.next" "$SLOTS/$port"
   # A slot that crash-looped earlier is left "failed" by StartLimitBurst and
   # would refuse a plain start.
   systemctl reset-failed "$APP@$port" 2>/dev/null || true
   systemctl restart "$APP@$port" || true   # whether it came up is slot_healthy's call
+}
+
+# The release a slot runs: its symlink points at RUN_DIR inside the release.
+slot_release() {
+  local d
+  d=$(readlink -f "$SLOTS/$1" 2>/dev/null) || return 0
+  if [[ $RUN_DIR == . ]]; then echo "$d"; else echo "${d%/"$RUN_DIR"}"; fi
 }
 
 stop_slot() {
@@ -118,14 +148,14 @@ stop_slot() {
 write_upstream() {
   cat <<EOF
 # Managed by $APP-deploy — the live blue/green slot. Do not edit by hand.
-upstream treelogy_ab {
+upstream $UPSTREAM {
     server 127.0.0.1:$1;
     keepalive 16;
 }
 
 # Which slot served a request, echoed as X-Upstream to loopback clients only,
 # so the deploy can tell the new slot is really taking traffic.
-map \$remote_addr \$treelogy_ab_slot {
+map \$remote_addr \$$SLOT_VAR {
     127.0.0.1 \$upstream_addr;
     default   "";
 }
@@ -207,7 +237,7 @@ go_live() {
 # Each step is checked explicitly: `set -e` is suspended inside a subshell
 # whose status is tested with `||`, so a failing build would otherwise fall
 # through to the next command and report success.
-build_release() {
+build_app() {
   cd "$1" || return 1
   export NODE_OPTIONS=--max-old-space-size=1536
   as_app npm ci --no-audit --no-fund --loglevel=error || return 1
@@ -217,61 +247,100 @@ build_release() {
   as_app npm prune --omit=dev --no-audit --no-fund --loglevel=error || return 1
 }
 
-cmd_status() {
-  echo "live:     $(readlink -f "$CURRENT" 2>/dev/null || echo none) on :$(live_port)"
-  echo "releases:"
+# The dashboard runs from Next's standalone output, which carries its own traced
+# node_modules but not the static assets. The build reads the env file because
+# NEXT_SERVER_ACTIONS_ENCRYPTION_KEY and NEXT_PUBLIC_* are baked in at build time.
+build_dash() {
+  local sha=$2
+  cd "$1/dashboard" || return 1
+  export NODE_OPTIONS=--max-old-space-size=1536
+  as_app npm ci --no-audit --no-fund --loglevel=error || return 1   # postinstall: prisma generate
+  with_env env NEXT_DEPLOYMENT_ID="${sha:0:12}" NEXT_TELEMETRY_DISABLED=1 npm run build || return 1
+  [[ -f .next/standalone/server.js ]] || { echo "build produced no .next/standalone/server.js" >&2; return 1; }
+  as_app cp -R .next/static .next/standalone/.next/static || return 1
+  as_app cp -R public .next/standalone/public || return 1
+  # Everything the server needs is inside standalone/ now; the rest is ~1 GB per release.
+  rm -rf -- node_modules .next/cache
+}
+
+status_component() {
+  echo "[$1] live: $(readlink -f "$CURRENT" 2>/dev/null || echo none) on :$(live_port)"
   find "$RELEASES" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort -r |
     while read -r r; do
       printf '  %s%s\n' "$r" "$([[ -f $RELEASES/$r/.deployable ]] || echo '  (never went live — not a rollback target)')"
     done
-  for p in "${PORTS[@]}"; do echo "slot :$p  $(systemctl is-active "$APP@$p" || true)"; done
+  for p in "${PORTS[@]}"; do echo "  slot :$p  $(systemctl is-active "$APP@$p" || true)"; done
+}
+
+cmd_status() {
+  local c
+  for c in app dash; do
+    use_component "$c"
+    [[ -d $BASE ]] && status_component "$c"
+  done
 }
 
 cmd_restart() {
   local live; live=$(readlink -f "$CURRENT" 2>/dev/null || true)
-  [[ -n $live && -d $live ]] || die "no live release to restart"
-  log "re-launching $(basename "$live") on the other slot"
+  [[ -n $live && -d $live ]] || die "[$APP] no live release to restart"
+  log "[$APP] re-launching $(basename "$live") on the other slot"
   go_live "$live"
 }
 
 cmd_rollback() {
   local target
   target=$(previous_release)
-  [[ -n $target ]] || die "no previous release to roll back to"
-  log "rolling back to $(basename "$target")"
+  [[ -n $target ]] || die "[$APP] no previous release to roll back to"
+  log "[$APP] rolling back to $(basename "$target")"
   go_live "$target"
 }
 
+# Build every requested component before any of them goes live, so a broken
+# dashboard build can't leave the app on a commit the dashboard never reached.
 cmd_deploy() {
-  local ref=$1 sha rel
-  [[ -r $ENV_FILE ]] || die "$ENV_FILE missing"
+  local target=$1 ref=$2 sha c
+  local -a comps
+  local -A rel
+  [[ $target == all ]] && comps=(app dash) || comps=("$target")
 
   if [[ ! -d $MIRROR ]]; then
     log "cloning $REPO_URL"
-    as_app git clone --mirror --quiet "$REPO_URL" "$MIRROR"
+    as_git git clone --mirror --quiet "$REPO_URL" "$MIRROR"
   fi
   log "fetching"
-  as_app git --git-dir="$MIRROR" fetch --prune --quiet origin
-  sha=$(as_app git --git-dir="$MIRROR" rev-parse --verify "$ref^{commit}") || die "unknown ref: $ref"
+  as_git git --git-dir="$MIRROR" fetch --prune --quiet origin
+  sha=$(as_git git --git-dir="$MIRROR" rev-parse --verify "$ref^{commit}") || die "unknown ref: $ref"
 
-  rel=$RELEASES/$(date -u +%Y%m%dT%H%M%SZ)-${sha:0:7}
-  log "building ${sha:0:7} ($ref) in $(basename "$rel")"
-  as_app mkdir -p "$rel"
-  as_app bash -c 'git --git-dir="$0" archive "$1" | tar -x -C "$2"' "$MIRROR" "$sha" "$rel"
-  echo "$sha" | as_app tee "$rel/REVISION" >/dev/null
+  for c in "${comps[@]}"; do
+    use_component "$c"
+    [[ -r $ENV_FILE ]] || die "$ENV_FILE missing"
+    rel[$c]=$RELEASES/$(date -u +%Y%m%dT%H%M%SZ)-${sha:0:7}
+    log "[$c] building ${sha:0:7} ($ref) in $(basename "${rel[$c]}")"
+    as_app mkdir -p "${rel[$c]}"
+    if [[ $c == dash ]]; then
+      as_git git --git-dir="$MIRROR" archive "$sha" dashboard | as_app tar -x -C "${rel[$c]}"
+    else
+      as_git git --git-dir="$MIRROR" archive "$sha" | as_app tar -x -C "${rel[$c]}"
+    fi
+    echo "$sha" | as_app tee "${rel[$c]}/REVISION" >/dev/null
+    # A failed build leaves its directory behind for inspection but never goes live.
+    ( "build_$c" "${rel[$c]}" "$sha" ) || die "[$c] build failed; nothing switched (${rel[$c]} left for inspection)"
+  done
 
-  # A failed build leaves its directory behind for inspection but never goes live.
-  ( build_release "$rel" ) || die "build failed; live slot untouched ($rel left for inspection)"
+  # Migrations belong to the app and run before the switch, against the
+  # database the old release is still serving from — so they must stay
+  # backward compatible (expand, deploy, then contract in a later release).
+  if [[ -n ${rel[app]:-} ]]; then
+    use_component app
+    log "[app] applying migrations"
+    ( cd "${rel[app]}" && with_env npx prisma migrate deploy ) || die "migration failed; nothing switched"
+  fi
 
-  # Migrations run before the switch, against the database the old release is
-  # still serving from — so they must stay backward compatible (expand, deploy,
-  # then contract in a later release).
-  log "applying migrations"
-  ( cd "$rel" && with_env npx prisma migrate deploy ) || die "migration failed; live slot untouched"
-
-  go_live "$rel"
-
-  prune_releases
+  for c in "${comps[@]}"; do
+    use_component "$c"
+    go_live "${rel[$c]}"
+    prune_releases
+  done
 }
 
 # Keep the newest KEEP_RELEASES proven releases as rollback targets, plus only
@@ -279,7 +348,7 @@ cmd_deploy() {
 # quota: a run of bad deploys would otherwise push every rollback target out.
 prune_releases() {
   local in_use proven=0 failed=0 r
-  in_use=$(for p in "${PORTS[@]}"; do readlink -f "$SLOTS/$p" 2>/dev/null || true; done; readlink -f "$CURRENT")
+  in_use=$(for p in "${PORTS[@]}"; do slot_release "$p"; done; readlink -f "$CURRENT")
   find "$RELEASES" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -r |
     while read -r r; do
       grep -qxF "$RELEASES/$r" <<<"$in_use" && continue
@@ -292,10 +361,16 @@ prune_releases() {
     done
 }
 
-case ${1:-main} in
-  rollback) cmd_rollback ;;
-  restart)  cmd_restart ;;
+case ${1:-} in
+  rollback) use_component "${2:?usage: rollback app|dash}"; cmd_rollback ;;
+  restart)
+    if [[ ${2:-all} == all ]]; then
+      for c in app dash; do use_component "$c"; cmd_restart; done
+    else
+      use_component "$2"; cmd_restart
+    fi ;;
   status)   cmd_status ;;
-  -h|--help) sed -n '2,8p' "$0" ;;
-  *)        cmd_deploy "${1:-main}" ;;
+  -h|--help) sed -n '2,10p' "$0" ;;
+  all|app|dash) cmd_deploy "$1" "${2:-main}" ;;
+  *)        cmd_deploy all "${1:-main}" ;;   # deploy.sh <git-ref>, as before components
 esac

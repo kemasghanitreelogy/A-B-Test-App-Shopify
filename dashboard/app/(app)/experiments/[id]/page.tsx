@@ -42,7 +42,7 @@ export default async function ExperimentPage({ params }: PageProps<"/experiments
     computeResults(id),
     callBridge("status", { experimentId: id, actorEmail: user.email }),
     // Acuan PostHog dibaca lewat bridge yang sama: kunci API PostHog hanya ada
-    // di app Fly.io. Kegagalannya ditampilkan di panelnya sendiri, bukan
+    // di app Shopify. Kegagalannya ditampilkan di panelnya sendiri, bukan
     // menggagalkan halaman.
     callBridge("posthog.status", { experimentId: id, actorEmail: user.email }),
     // Laporan kesehatan terakhir (dihitung terjadwal di Fly, hanya dibaca di sini).

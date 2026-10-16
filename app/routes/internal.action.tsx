@@ -34,9 +34,9 @@ import { ensureWebPixel, readWebPixel } from "../lib/pixel.server";
 import { latestHealth, runHealthChecks } from "../lib/health.server";
 
 /**
- * Jembatan dari dashboard Vercel ke Shopify Admin API.
+ * Jembatan dari dashboard ke Shopify Admin API.
  *
- * Dashboard membaca dan menulis Neon secara langsung untuk semua hal yang tidak
+ * Dashboard membaca dan menulis database secara langsung untuk semua hal yang tidak
  * menyentuh Shopify. Yang lewat sini hanya aksi yang butuh access token Shopify,
  * yang sengaja disimpan di satu tempat saja: aplikasi ini.
  */

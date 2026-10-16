@@ -6,9 +6,9 @@ import type { HealthReport } from "./health-types";
 import type { VariantPlan } from "./component-variant";
 
 /**
- * Klien untuk endpoint internal di app Shopify (Fly.io).
+ * Klien untuk endpoint internal di app Shopify.
  *
- * Access token Shopify sengaja hanya ada di satu tempat — app Fly.io. Dashboard
+ * Access token Shopify sengaja hanya ada di satu tempat — app Shopify. Dashboard
  * ini tidak memilikinya dan tidak boleh memilikinya, karena menyebar kredensial
  * ke dua platform berarti menggandakan permukaan yang harus dijaga dan dirotasi.
  */
@@ -234,7 +234,7 @@ export async function callBridge(
     }
   } catch (error) {
     if (error instanceof Error && error.name === "TimeoutError") {
-      return { error: "Bridge tidak merespons dalam 60 detik. Cek apakah app Fly.io hidup." };
+      return { error: "Bridge tidak merespons dalam 60 detik. Cek apakah app Shopify hidup." };
     }
     return { error: error instanceof Error ? error.message : String(error) };
   }
