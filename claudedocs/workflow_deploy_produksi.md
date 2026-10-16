@@ -1,3 +1,8 @@
+> **Usang sejak 2026-10-16.** Runbook ini untuk setup lama (app di Fly.io, dashboard di
+> Vercel). Fly dihapus 2026-10-05, project Vercel dihapus 2026-10-16; app dan dashboard
+> kini sama-sama di VPS — lihat [`deploy/README.md`](../deploy/README.md). Disimpan sebagai
+> catatan sejarah.
+
 # Workflow — Deploy Produksi 3 Platform
 
 Tanggal: 2026-09-03 · Toko: `treelogymoringa.myshopify.com` (treelogy.com)

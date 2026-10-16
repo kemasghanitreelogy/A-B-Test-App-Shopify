@@ -1,6 +1,6 @@
 # Desain: migrasi penuh dashboard dari Vercel ke VPS
 
-Status: **draft, menunggu approval** · 2026-10-16
+Status: **selesai** · 2026-10-16 — semua langkah §4 dijalankan; project Vercel sudah dihapus.
 
 ## 1. Tujuan dan batasan
 

@@ -52,7 +52,7 @@ lifecycle lokal (start/pause/complete)
   └─ mirrorTransition(): Experiments API
        draft→launch | paused→resume | stopped→reset+launch | running→pause | →end
 
-dashboard (Vercel) ── bridge HMAC ──▶ /internal/action posthog.status
+dashboard ── bridge HMAC ──▶ /internal/action posthog.status
   └─ GET experiments/:id/  +  GET experiments/:id/metrics_recalculation/latest/
   └─ parseRecalculation() → panel "Acuan PostHog"
 ```
