@@ -341,6 +341,40 @@ export async function componentReadiness(admin: AdminApiContext, componentKey: s
   return { ...result, theme: { id: theme.id, name: theme.name } };
 }
 
+/**
+ * Kill switch: jeda SEMUA eksperimen yang berjalan di toko ini.
+ *
+ * Statusnya ikut diubah ke "paused", bukan hanya config storefront yang
+ * dimatikan. Kalau hanya config-nya, dashboard tetap menampilkan "Berjalan",
+ * dan republish berikutnya (start/pause eksperimen lain, simpan, republish)
+ * menyalakan semuanya lagi diam-diam — tombol darurat yang bisa lepas sendiri.
+ * Untuk menyalakan lagi, start ulang eksperimen yang diinginkan satu per satu.
+ *
+ * Storefront dimatikan lebih dulu (`on: false`): kalau langkah berikutnya gagal,
+ * pengunjung tetap sudah kembali ke variant A, dan klik ulang menyelesaikannya.
+ */
+export async function killSwitch(admin: AdminApiContext, shop: string) {
+  await republishConfig(admin, shop, false);
+
+  const running = await db.experiment.findMany({
+    where: { shop, status: "running" },
+    select: { id: true, name: true },
+  });
+  if (running.length > 0) {
+    await db.experiment.updateMany({
+      where: { id: { in: running.map((e) => e.id) } },
+      data: { status: "paused", endedAt: null },
+    });
+  }
+
+  const warnings: string[] = [];
+  for (const experiment of running) {
+    const posthogError = await mirrorTransition(experiment.id, "pause");
+    if (posthogError) warnings.push(`PostHog ${experiment.name}: ${posthogError}`);
+  }
+  return { paused: running, warnings };
+}
+
 export async function setStatus(
   admin: AdminApiContext,
   shop: string,

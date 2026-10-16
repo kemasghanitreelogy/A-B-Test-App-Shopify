@@ -73,8 +73,8 @@ export default async function ExperimentsPage() {
             <div className="text-sm font-medium">Kill switch</div>
             <p className="text-xs text-muted-foreground">
               {t(
-                "Mengembalikan seluruh pengunjung ke desain asli seketika, tanpa menghapus data yang sudah terkumpul. Pakai ini kalau desain B ternyata rusak di perangkat tertentu.",
-                "Instantly sends every visitor back to the original design without deleting collected data. Use it if design B turns out to be broken on some devices.",
+                "Menjeda semua eksperimen yang berjalan dan mengembalikan seluruh pengunjung ke desain asli seketika, tanpa menghapus data yang sudah terkumpul. Pakai ini kalau desain B ternyata rusak di perangkat tertentu. Untuk melanjutkan, start ulang eksperimennya satu per satu.",
+                "Pauses every running experiment and instantly sends every visitor back to the original design, without deleting collected data. Use it if design B turns out to be broken on some devices. To continue, restart each experiment.",
               )}
             </p>
           </div>

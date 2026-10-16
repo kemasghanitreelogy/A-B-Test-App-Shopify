@@ -7,7 +7,7 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { computeResults } from "../lib/results.server";
 import { getMainTheme, themeEditorUrl } from "../lib/theme.server";
-import { detectTemplateDrift, republishConfig, setStatus, startExperiment } from "../lib/experiment.server";
+import { detectTemplateDrift, killSwitch, republishConfig, setStatus, startExperiment } from "../lib/experiment.server";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -105,10 +105,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
 
     if (intent === "killswitch") {
-      // Matikan seluruh config di storefront tanpa mengubah status eksperimen,
-      // supaya bisa dihidupkan lagi tanpa kehilangan data.
-      await republishConfig(admin, session.shop, false);
-      return { ok: "Kill switch aktif. Semua visitor melihat variant A." };
+      // Menjeda semua eksperimen yang berjalan; data yang terkumpul tetap utuh.
+      const { paused } = await killSwitch(admin, session.shop);
+      return { ok: `Kill switch aktif. ${paused.length} eksperimen dijeda, semua visitor melihat variant A.` };
     }
 
     if (intent === "republish") {
@@ -358,7 +357,7 @@ export default function ExperimentDetail() {
           {running && <s-button onClick={() => submit("pause")}>Jeda</s-button>}
           <s-button onClick={() => submit("complete")}>Tutup eksperimen</s-button>
           <s-button tone="critical" onClick={() => submit("killswitch")}>
-            Kill switch — semua ke variant A
+            Kill switch — jeda semua, semua ke variant A
           </s-button>
           <s-button variant="tertiary" onClick={() => submit("republish")}>
             Terbitkan ulang config

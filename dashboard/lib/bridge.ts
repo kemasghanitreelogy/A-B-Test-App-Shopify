@@ -154,6 +154,9 @@ export interface BridgeResult {
   posthog?: PostHogStatus;
   /** jumlah event outbox yang berhasil dikirim pada aksi ini */
   sent?: number;
+  /** kill switch: berapa eksperimen yang dijeda */
+  paused?: number;
+  warnings?: string[];
   /** analitik perilaku per variant dari PostHog */
   analytics?: PostHogAnalytics;
   heatmap?: PostHogHeatmap;

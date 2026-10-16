@@ -5,6 +5,7 @@ import { InternalAuthError, verifyInternalRequest } from "../lib/internal-auth.s
 import {
   componentReadiness,
   detectTemplateDrift,
+  killSwitch,
   republishConfig,
   setStatus,
   startExperiment,
@@ -129,9 +130,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
 
       case "killswitch": {
-        await republishConfig(admin, shop, false);
-        await log(actorEmail, "killswitch", experimentId, "semua visitor dikembalikan ke variant A");
-        return json({ ok: true });
+        const { paused, warnings } = await killSwitch(admin, shop);
+        await log(
+          actorEmail,
+          "killswitch",
+          undefined,
+          `semua visitor dikembalikan ke variant A; dijeda: ${paused.map((e) => e.name).join(", ") || "tidak ada"}`,
+        );
+        for (const experiment of paused) {
+          await log(actorEmail, "experiment.pause", experiment.id, "lewat kill switch");
+        }
+        return json({ ok: true, paused: paused.length, warnings });
       }
 
       case "republish": {

@@ -268,7 +268,11 @@ export async function controlExperimentAction(_prev: FormState, formData: FormDa
       (startWarnings ? ` ${startWarnings}` : ""),
     pause: t("Dijeda. Semua pengunjung kembali melihat variant A.", "Paused. All visitors see variant A again."),
     complete: t("Eksperimen ditutup.", "Experiment completed."),
-    killswitch: t("Kill switch aktif. Semua pengunjung melihat variant A.", "Kill switch on. All visitors see variant A."),
+    killswitch:
+      t(
+        `Kill switch aktif. ${result.paused ?? 0} eksperimen dijeda, semua pengunjung melihat variant A. Start ulang eksperimen yang ingin dilanjutkan.`,
+        `Kill switch on. ${result.paused ?? 0} experiment(s) paused; all visitors see variant A. Restart the ones you want to continue.`,
+      ) + (result.warnings?.length ? ` ${result.warnings.join(" ")}` : ""),
     republish: t("Config storefront diterbitkan ulang.", "Storefront config republished."),
     "posthog.sync":
       t("PostHog tersinkron.", "PostHog synced.") +
