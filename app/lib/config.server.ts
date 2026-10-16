@@ -24,9 +24,9 @@ export interface StorefrontConfig {
   /**
    * posthog-js di storefront (opsional, POSTHOG_STOREFRONT=1). Token project
    * bersifat publik (phc_…), sama seperti yang dipasang di snippet mana pun.
-   *   t = token, h = api host, r = session replay, hm = heatmap
+   *   t = token, h = api host, r = session replay, rs = sample rate replay (0–1)
    */
-  ph?: { t: string; h: string; r: 0 | 1; hm: 0 | 1 };
+  ph?: { t: string; h: string; r: 0 | 1; rs: number };
   ex: StorefrontExperiment[];
 }
 
@@ -72,7 +72,7 @@ export function buildStorefrontConfig(
     cookieName: string;
     cookieDays: number;
     cookieDomain: string;
-    posthog?: { token: string; host: string; replay: boolean; heatmaps: boolean } | null;
+    posthog?: { token: string; host: string; replay: boolean; replaySampleRate: number } | null;
   },
 ): StorefrontConfig {
   return {
@@ -83,7 +83,7 @@ export function buildStorefrontConfig(
     ckd: opts.cookieDays,
     ckdom: opts.cookieDomain,
     ...(opts.posthog
-      ? { ph: { t: opts.posthog.token, h: opts.posthog.host, r: opts.posthog.replay ? (1 as const) : (0 as const), hm: opts.posthog.heatmaps ? (1 as const) : (0 as const) } }
+      ? { ph: { t: opts.posthog.token, h: opts.posthog.host, r: opts.posthog.replay ? (1 as const) : (0 as const), rs: opts.posthog.replaySampleRate } }
       : {}),
     // hanya eksperimen yang benar-benar jalan yang dikirim ke storefront
     ex: experiments

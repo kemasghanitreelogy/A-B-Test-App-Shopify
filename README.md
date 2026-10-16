@@ -167,11 +167,13 @@ POSTHOG_PROJECT_ID="613479"
 Bucketing tetap di storefront — PostHog tidak pernah berada di jalur render.
 
 App embed juga memuat **posthog-js** di storefront (identitas = `_tl_vid`, setiap
-event membawa `$feature/<flag>` = variant) sehingga heatmap, session replay, scroll
-depth, rage click, dan web vitals bisa dibaca **per variant** di halaman
-**Audit lengkap** dashboard (`/experiments/<id>/audit`). Matikan dengan
-`POSTHOG_STOREFRONT=0`; replay/heatmap terpisah lewat `POSTHOG_STOREFRONT_REPLAY=0`
-dan `POSTHOG_STOREFRONT_HEATMAPS=0`.
+event membawa `$feature/<flag>` = variant) sehingga session replay, scroll depth,
+rage click, klik link/tombol, dan web vitals bisa dibaca **per variant** di halaman
+**Audit lengkap** dashboard (`/experiments/<id>/audit`). Autocapture hanya mencatat
+klik pada `<a>` dan `<button>`; heatmap dan dead click dimatikan di klien sehingga
+setelan project PostHog tidak bisa menyalakannya. Replay merekam sampel sesi
+(`POSTHOG_STOREFRONT_REPLAY_SAMPLE`, 0–1, default `0.2`). Matikan semuanya dengan
+`POSTHOG_STOREFRONT=0`, replay saja dengan `POSTHOG_STOREFRONT_REPLAY=0`.
 
 ## Verifikasi
 

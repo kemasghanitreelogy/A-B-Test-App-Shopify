@@ -428,12 +428,25 @@
       person_profiles: "identified_only",
       capture_pageview: false,
       capture_pageleave: true,
-      autocapture: true,
-      capture_dead_clicks: true,
-      enable_heatmaps: cfg.hm === 1,
+      /* Hanya klik pada link dan tombol. posthog-js menilai seluruh rantai
+         elemen, jadi klik pada ikon atau teks di dalam tombol atau link tetap
+         tercatat; klik pada div atau gambar biasa tidak. */
+      autocapture: {
+        dom_event_allowlist: ["click"],
+        element_allowlist: ["a", "button"]
+      },
+      /* Dimatikan eksplisit supaya setelan project di PostHog tidak bisa
+         menyalakannya kembali lewat remote config. */
+      capture_dead_clicks: false,
+      capture_heatmaps: false,
       disable_session_recording: cfg.r !== 1,
       capture_performance: { web_vitals: true },
-      session_recording: { maskAllInputs: true }
+      /* Config lama di metafield belum membawa `rs`; sampai diterbitkan ulang,
+         pakai default yang sama dengan server (DEFAULT_REPLAY_SAMPLE_RATE). */
+      session_recording: {
+        maskAllInputs: true,
+        sampleRate: typeof cfg.rs === "number" ? cfg.rs : 0.2
+      }
     });
     return ph;
   }

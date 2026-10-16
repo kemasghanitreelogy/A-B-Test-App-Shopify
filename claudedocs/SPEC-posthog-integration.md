@@ -164,7 +164,7 @@ Base `POSTHOG_API_HOST` (default `https://us.posthog.com`), header
 | `POSTHOG_PERSON_PROFILES` | tidak | `always` → event identified (lebih mahal) |
 | `POSTHOG_STOREFRONT` | tidak | `0` mematikan posthog-js di storefront (default aktif bila token ada) |
 | `POSTHOG_STOREFRONT_REPLAY` | tidak | `0` mematikan session replay |
-| `POSTHOG_STOREFRONT_HEATMAPS` | tidak | `0` mematikan pengumpulan heatmap |
+| `POSTHOG_STOREFRONT_REPLAY_SAMPLE` | tidak | porsi sesi yang direkam replay, 0–1 (default `0.2`; nilai tidak valid → default) |
 
 Tanpa `POSTHOG_PROJECT_TOKEN`: tidak ada baris outbox yang ditulis. Tanpa
 personal key: event tetap terkirim, tapi eksperimen PostHog harus dibuat manual
@@ -213,9 +213,14 @@ App embed memuat posthog-js sendiri (bukan snippet manual di theme), dari
 - `capture_pageview: false`, lalu `register({ "$feature/<flag>": variant })`
   **sebelum** `capture("$pageview")` manual — pageview pertama pun sudah
   membawa variant, jadi heatmap/replay halaman pendaratan terpisah per variant.
-- Autocapture, dead click, pageleave (scroll depth), web vitals, heatmap
-  (`POSTHOG_STOREFRONT_HEATMAPS`), session replay dengan `maskAllInputs`
-  (`POSTHOG_STOREFRONT_REPLAY`). Sampling replay diatur di project settings PostHog.
+- Autocapture **hanya klik pada `a`/`button`** (rantai elemen, jadi ikon di
+  dalam tombol ikut), pageleave (scroll depth), web vitals, session replay
+  dengan `maskAllInputs` (`POSTHOG_STOREFRONT_REPLAY`) dan
+  `session_recording.sampleRate` dari config (`rs`, default 0.2). Nilai klien
+  mengalahkan sampling di project settings.
+- `capture_dead_clicks: false` dan `capture_heatmaps: false` eksplisit, supaya
+  remote config project tidak menyalakannya. (Diubah 2026-10-16: sebelumnya
+  dead click dan heatmap aktif, autocapture tanpa filter, replay tanpa sampling.)
 
 ### 9.2 Bridge baru
 

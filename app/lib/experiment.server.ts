@@ -23,10 +23,24 @@ function env(name: string, fallback: string) {
   return process.env[name] || fallback;
 }
 
+/** Porsi sesi yang direkam session replay bila env tidak mengaturnya. */
+export const DEFAULT_REPLAY_SAMPLE_RATE = 0.2;
+
 /**
- * posthog-js di storefront: heatmap, session replay, web analytics per variant.
- * Dimatikan dengan POSTHOG_STOREFRONT=0. Replay dan heatmap masing-masing bisa
- * dimatikan terpisah (POSTHOG_STOREFRONT_REPLAY / POSTHOG_STOREFRONT_HEATMAPS).
+ * Sample rate replay dari POSTHOG_STOREFRONT_REPLAY_SAMPLE (0–1). Nilai yang
+ * tidak valid jatuh ke default, bukan ke 1: salah ketik di env tidak boleh
+ * diam-diam merekam semua sesi.
+ */
+function replaySampleRate(): number {
+  const raw = process.env.POSTHOG_STOREFRONT_REPLAY_SAMPLE;
+  const rate = raw === undefined || raw === "" ? NaN : Number(raw);
+  return rate >= 0 && rate <= 1 ? rate : DEFAULT_REPLAY_SAMPLE_RATE;
+}
+
+/**
+ * posthog-js di storefront: session replay (sampel) dan web analytics per
+ * variant. Dimatikan dengan POSTHOG_STOREFRONT=0; replay saja dengan
+ * POSTHOG_STOREFRONT_REPLAY=0. Heatmap dan dead click selalu mati.
  */
 function storefrontPostHog() {
   const token = process.env.POSTHOG_PROJECT_TOKEN;
@@ -35,7 +49,7 @@ function storefrontPostHog() {
     token,
     host: env("POSTHOG_HOST", "https://us.i.posthog.com"),
     replay: process.env.POSTHOG_STOREFRONT_REPLAY !== "0",
-    heatmaps: process.env.POSTHOG_STOREFRONT_HEATMAPS !== "0",
+    replaySampleRate: replaySampleRate(),
   };
 }
 

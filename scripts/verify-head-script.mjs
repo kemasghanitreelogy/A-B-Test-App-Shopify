@@ -123,7 +123,7 @@ for (let i = 0; !VID_B || !VID_A; i++) {
    mati, session replay dan heatmap — satu-satunya cara melihat apa yang dialami
    pengunjung saat itu — ikut hilang persis ketika paling dibutuhkan.            */
 {
-  const ph = { t: "phc_test", h: "https://us.i.posthog.com", r: 1, hm: 1 };
+  const ph = { t: "phc_test", h: "https://us.i.posthog.com", r: 1, rs: 0.2 };
   const r = runScript({ config: { ...baseConfig, on: false, ph }, ctx: baseCtx, cookies: `_tl_vid=${VID_B}` });
   check("kill switch: tidak ada redirect", r.log.replaced === null, r.log.replaced ?? "");
   check("kill switch: tidak ada penandaan keranjang",
@@ -133,7 +133,7 @@ for (let i = 0; !VID_B || !VID_A; i++) {
 
 /* ---------- 11b. Tanpa eksperimen, PostHog tetap jalan ---------- */
 {
-  const ph = { t: "phc_test", h: "https://us.i.posthog.com", r: 1, hm: 1 };
+  const ph = { t: "phc_test", h: "https://us.i.posthog.com", r: 1, rs: 0.2 };
   const r = runScript({ config: { ...baseConfig, ex: [], ph }, ctx: baseCtx });
   check("tanpa eksperimen: posthog-js tetap dimuat (analitik situs)",
     typeof r.sandbox.posthog === "object" && r.sandbox.posthog !== null);
@@ -147,7 +147,7 @@ for (let i = 0; !VID_B || !VID_A; i++) {
    ke eksperimen itu — dan halaman audit sebuah test yang sudah ditutup akan
    berubah angkanya sendiri.                                                     */
 {
-  const ph = { t: "phc_test", h: "https://us.i.posthog.com", r: 1, hm: 1 };
+  const ph = { t: "phc_test", h: "https://us.i.posthog.com", r: 1, rs: 0.2 };
   const r = runScript({
     config: { ...baseConfig, ph, ex: [{ ...baseConfig.ex[0], k: "tl-ab-baru" }] },
     ctx: baseCtx,
