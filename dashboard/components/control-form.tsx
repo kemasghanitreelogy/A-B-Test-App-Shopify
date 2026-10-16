@@ -64,7 +64,14 @@ export function ControlForm({
   const needsConfirm = Boolean(confirmLabel);
 
   return (
-    <form action={formAction} className={className}>
+    <form
+      action={(formData: FormData) => {
+        // Submit sudah berjalan di titik ini, jadi aman melucuti tombol.
+        setArmed(false);
+        formAction(formData);
+      }}
+      className={className}
+    >
       <input type="hidden" name="id" value={experimentId ?? ""} />
       <input type="hidden" name="action" value={action} />
       <SubmitButton
@@ -73,18 +80,17 @@ export function ControlForm({
         disabled={disabled}
         className="w-full"
         pendingLabel={t("Memproses…", "Working…")}
-        {...(needsConfirm && !armed
-          ? {
-              // Ketukan pertama hanya mempersenjatai tombol, belum mengirim form.
-              type: "button" as const,
-              onClick: (event: React.MouseEvent) => {
-                event.preventDefault();
-                setArmed(true);
-              },
-            }
-          : // Ketukan kedua mengirim form, dan melucuti tombol saat itu juga
-            // sehingga tidak perlu menunggu hasil untuk mengembalikan tampilannya.
-            { onClick: () => setArmed(false) })}
+        // Ketukan pertama hanya mempersenjatai tombol; ketukan kedua mengirim form.
+        // Tombolnya selalu type="submit". Jangan mengubah state di ketukan kedua:
+        // React me-render ulang sebelum browser menjalankan submit, dan kalau
+        // render itu mengubah tombol menjadi type="button", form tidak pernah
+        // terkirim. Tombol dilucuti di action form, setelah submit berjalan.
+        onClick={(event: React.MouseEvent) => {
+          if (needsConfirm && !armed) {
+            event.preventDefault();
+            setArmed(true);
+          }
+        }}
       >
         {armed ? confirmLabel : label}
       </SubmitButton>
