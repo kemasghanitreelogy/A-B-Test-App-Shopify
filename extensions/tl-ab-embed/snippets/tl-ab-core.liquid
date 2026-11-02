@@ -345,6 +345,45 @@
           window.dataLayer.push({ event: "tl_ab_redirect_pending", tl_ab_redirecting: true });
         } catch (e) {}
 
+        /* Penugasan dicatat SEBELUM redirect (intent-to-treat).
+           Grup A tercatat di halaman ini juga, sedangkan grup B dulu baru tercatat
+           di halaman sesudah redirect. Pengunjung B yang pergi selama redirect
+           (back, tutup tab, koneksi putus) tidak pernah terhitung: test A/A
+           23 Sep-16 Okt mencatat 52,4% A lawan 47,6% B dengan halaman identik
+           (health I8 SRM gagal), dan grup B hanya berisi pengunjung yang sabar.
+           Exposure di sini dan exposure di halaman B jatuh ke dedupeKey yang sama
+           (eksperimen|visitor|exposure|produk|hari), jadi tidak terhitung dua kali.
+           Antrean track() belum ada pada titik ini, jadi beacon dikirim langsung
+           dengan envelope v2 yang sama dengan flush(). Sesi dibaca/ditulis dengan
+           kunci dan batas idle yang sama dengan sessionId(). */
+        try {
+          if (consentOk() && CFG.ep) {
+            var preSid = "";
+            try {
+              var preNow = Date.now();
+              var preRaw = sessionStorage.getItem("_tl_sid");
+              if (preRaw) {
+                var preParts = preRaw.split("|");
+                if (preParts[0] && 1800000 > preNow - Number(preParts[1] || 0)) preSid = preParts[0];
+              }
+              if (!preSid) preSid = newVisitorId();
+              sessionStorage.setItem("_tl_sid", preSid + "|" + preNow);
+            } catch (e) {}
+            var preBody = JSON.stringify({
+              v: 2,
+              vid: vid,
+              sid: preSid,
+              keys: {},
+              ev: [{ e: experiment.id, v: variant, t: "exposure", p: CTX.productId || "", n: "" }]
+            });
+            if (navigator.sendBeacon) {
+              navigator.sendBeacon(CFG.ep, new Blob([preBody], { type: "text/plain;charset=UTF-8" }));
+            } else {
+              fetch(CFG.ep, { method: "POST", body: preBody, keepalive: true });
+            }
+          }
+        } catch (e) {}
+
         window.location.replace(withView(window.location.href, wantSuffix));
         return; // parser berhenti di sini; halaman berikutnya yang akan melanjutkan
       }

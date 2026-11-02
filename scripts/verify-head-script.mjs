@@ -400,6 +400,30 @@ for (let i = 0; !VID_B || !VID_A; i++) {
     !(r.sandbox.dataLayer || []).some((e) => e.event === "tl_ab_experience_impression"));
 }
 
+/* ---------- 27b. Penugasan B tercatat SEBELUM redirect (intent-to-treat) ----------
+
+   Dulu grup B baru tercatat di halaman sesudah redirect, sedangkan grup A
+   tercatat di halaman pertama. Pengunjung B yang pergi selama redirect tidak
+   pernah terhitung: A/A 23 Sep-16 Okt mencatat 52,4% A : 47,6% B (SRM, health
+   I8 gagal). Exposure harus terkirim sebelum location.replace, dengan kunci
+   dedupe yang sama dengan exposure di halaman B (n kosong, produk sama).       */
+{
+  const r = runScript({ config: baseConfig, ctx: baseCtx, cookies: `_tl_vid=${VID_B}` });
+  const bodies = r.log.beacons.map((b) => { try { return JSON.parse(b.body); } catch { return {}; } });
+  const pre = bodies.flatMap((b) => b.ev || []).find((e) => e.t === "exposure");
+  check("grup B: redirect tetap terjadi", typeof r.log.replaced === "string" && r.log.replaced.includes("view="),
+    String(r.log.replaced));
+  check("grup B: exposure terkirim sebelum halaman ditinggalkan", Boolean(pre), JSON.stringify(bodies));
+  check("exposure pra-redirect bervariant B untuk eksperimen ini",
+    pre?.v === "B" && pre?.e === baseConfig.ex[0].id, JSON.stringify(pre ?? null));
+  check("exposure pra-redirect memakai kunci dedupe yang sama dengan halaman B (n kosong, produk sama)",
+    pre?.n === "" && pre?.p === (baseCtx.productId || ""), JSON.stringify(pre ?? null));
+  check("exposure pra-redirect membawa visitor id & envelope v2",
+    bodies[0]?.v === 2 && bodies[0]?.vid === VID_B, JSON.stringify(bodies[0] ?? null));
+  check("exposure pra-redirect dikirim ke app proxy", r.log.beacons[0]?.endpoint === "/apps/tl-ab/collect",
+    String(r.log.beacons[0]?.endpoint));
+}
+
 /* ---------- 28. Identitas GA4 ikut ke server ----------
 
    Konversi terjadi di checkout, yang tidak boleh memuat gtag.js. client_id ini
