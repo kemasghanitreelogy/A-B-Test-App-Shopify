@@ -18,7 +18,7 @@
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit",
-    "test": "node scripts/verify-bucketing-parity.mjs && node scripts/verify-stats.mjs && node scripts/verify-head-script.mjs && node --import ./scripts/ts-resolve.mjs scripts/verify-components.mjs && node --import ./scripts/ts-resolve.mjs scripts/verify-component-variant.mjs && node --import ./scripts/ts-resolve.mjs scripts/verify-track.mjs && node --import ./scripts/ts-resolve.mjs scripts/verify-attribution.mjs && node scripts/verify-translations.mjs && node --import ./scripts/ts-resolve.mjs scripts/verify-posthog.mjs && node scripts/sync-dashboard.mjs --check",
+    "test": "node scripts/verify-bucketing-parity.mjs && node scripts/verify-stats.mjs && node scripts/verify-head-script.mjs && node --import ./scripts/ts-resolve.mjs scripts/verify-components.mjs && node --import ./scripts/ts-resolve.mjs scripts/verify-component-variant.mjs && node --import ./scripts/ts-resolve.mjs scripts/verify-track.mjs && node --import ./scripts/ts-resolve.mjs scripts/verify-attribution.mjs && node --import ./scripts/ts-resolve.mjs scripts/verify-theme-analysis.mjs && node scripts/verify-translations.mjs && node --import ./scripts/ts-resolve.mjs scripts/verify-posthog.mjs && node scripts/sync-dashboard.mjs --check",
     "sync:dashboard": "node scripts/sync-dashboard.mjs",
     "deploy:vps": "ssh treelogy-vps sudo treelogy-ab-deploy"
   },

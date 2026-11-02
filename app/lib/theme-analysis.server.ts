@@ -1,5 +1,6 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import { copyTemplateTranslations, type TranslationCopyResult } from "./translations.server";
+import { sectionTypesIn } from "./template-json";
 
 /**
  * Analisis theme untuk wizard pemilihan halaman.
@@ -282,22 +283,6 @@ export class BlockingChangeError extends Error {
 /** "ab-b" -> "abb". Nama section dipakai sebagai `type` di JSON, jadi harus polos. */
 function sectionToken(suffix: string): string {
   return suffix.replace(/[^a-z0-9]/gi, "").toLowerCase() || "abb";
-}
-
-/** Semua nama section yang dirujuk sebuah template JSON. */
-function sectionTypesIn(templateJson: string): string[] {
-  try {
-    const parsed = JSON.parse(templateJson) as { sections?: Record<string, { type?: string }> };
-    return [
-      ...new Set(
-        Object.values(parsed.sections ?? {})
-          .map((s) => s?.type)
-          .filter((t): t is string => typeof t === "string"),
-      ),
-    ];
-  } catch {
-    return [];
-  }
 }
 
 /** Snippet yang dirujuk sebuah file Liquid lewat render/include. */
