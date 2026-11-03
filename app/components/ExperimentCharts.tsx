@@ -423,6 +423,10 @@ export const chartStyles = `
 .ab-empty { color: ${AB_COLORS.muted}; font-size: 13px; margin: 8px 0; }
 .ab-hero-value { font-size: 40px; line-height: 1.05; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .ab-kpi-value { font-size: 24px; line-height: 1.15; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.ab-tag { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 6px;
+  font-size: 12px; font-weight: 650; color: #fff; line-height: 1; flex: none; }
+.ab-tag-a { background: ${AB_COLORS.a}; }
+.ab-tag-b { background: ${AB_COLORS.b}; }
 .ab-kpi-sub { font-size: 12px; color: ${AB_COLORS.muted}; font-variant-numeric: tabular-nums; }
 .ab-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: ${AB_COLORS.muted}; }
 .ab-legend span { display: inline-flex; align-items: center; gap: 6px; }

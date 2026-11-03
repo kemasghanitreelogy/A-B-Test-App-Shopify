@@ -214,6 +214,29 @@ export default function ExperimentDetail() {
   const probB = test && "probBBeatsA" in test ? test.probBBeatsA : null;
   const verdict = verdictFor(results, test);
 
+  // Apa yang dilihat tiap grup: template untuk eksperimen template, komponen untuk eksperimen komponen.
+  const isComponent = experiment.kind === "component";
+  const arms = [
+    {
+      key: "A",
+      title: "Control",
+      traffic: 100 - experiment.splitPctB,
+      description: "The current live page, unchanged. Visitors see what they see today.",
+      source: isComponent
+        ? `Component: ${experiment.component ?? "—"} (live version)`
+        : `Template: templates/product${experiment.variantASuffix ? `.${experiment.variantASuffix}` : ""}.json`,
+    },
+    {
+      key: "B",
+      title: "Variant",
+      traffic: experiment.splitPctB,
+      description: "The new design being tested against the control.",
+      source: isComponent
+        ? `Component: ${experiment.component ?? "—"} (from ${experiment.variantBSourceThemeName ?? "draft theme"})`
+        : `Template: templates/product.${experiment.variantBSuffix}.json`,
+    },
+  ];
+
   const least = Math.min(results.A.visitors, results.B.visitors);
   const etaDays =
     hoursRunning > 1 && least > 0 && least < results.requiredPerArm
@@ -314,6 +337,24 @@ export default function ExperimentDetail() {
 
       <style>{chartStyles}</style>
 
+      <s-section heading="Variants">
+        <s-grid gridTemplateColumns="@container (inline-size <= 560px) 1fr, 1fr 1fr" gap="base">
+          {arms.map((v) => (
+            <s-box key={v.key} padding="base" border="base" borderRadius="base">
+              <s-stack direction="block" gap="small-200">
+                <s-stack direction="inline" gap="small-200" alignItems="center">
+                  <span className={`ab-tag ab-tag-${v.key.toLowerCase()}`}>{v.key}</span>
+                  <s-text type="strong">{v.title}</s-text>
+                  <s-badge>{v.traffic}% of traffic</s-badge>
+                </s-stack>
+                <s-text color="subdued">{v.description}</s-text>
+                <s-text color="subdued">{v.source}</s-text>
+              </s-stack>
+            </s-box>
+          ))}
+        </s-grid>
+      </s-section>
+
       <s-section heading="Summary">
         <s-grid gridTemplateColumns="@container (inline-size <= 640px) 1fr, 3fr 2fr" gap="large-200">
           <s-stack direction="block" gap="small-300">
@@ -391,8 +432,14 @@ export default function ExperimentDetail() {
               {i > 0 && <s-divider direction="block" />}
               <s-stack direction="block" gap="small-200">
                 <s-text color="subdued">{k.label}</s-text>
-                <span className="ab-kpi-value" style={{ color: AB_COLORS.b }}>{k.b}</span>
-                <span className="ab-kpi-sub">A: {k.a}</span>
+                <s-stack direction="inline" gap="small-200" alignItems="center">
+                  <span className="ab-tag ab-tag-b">B</span>
+                  <span className="ab-kpi-value" style={{ color: AB_COLORS.b }}>{k.b}</span>
+                </s-stack>
+                <s-stack direction="inline" gap="small-200" alignItems="center">
+                  <span className="ab-tag ab-tag-a">A</span>
+                  <span className="ab-kpi-sub">{k.a}</span>
+                </s-stack>
                 {k.delta !== null && (
                   <s-stack direction="inline">
                     <s-badge tone={k.significant ? (k.delta > 0 ? "success" : "critical") : "neutral"} icon={k.delta >= 0 ? "arrow-up" : "arrow-down"}>
