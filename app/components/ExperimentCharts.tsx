@@ -412,6 +412,8 @@ export const chartStyles = `
 .ab-label { font-size: 13px; fill: ${AB_COLORS.text}; }
 .ab-strong { font-weight: 650; }
 .ab-num { font-variant-numeric: tabular-nums; }
+/* Teks grafik tetap terbaca saat dilintasi garis grid atau garis nol. */
+.ab-chart text { paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; }
 .ab-hover { cursor: default; }
 .ab-tip { position: absolute; z-index: 20; pointer-events: none; background: #fff; border: 1px solid #e3e3e3; border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 8px 10px; font-size: 12px; display: grid; gap: 3px; min-width: 160px; max-width: 220px; color: ${AB_COLORS.text}; }
