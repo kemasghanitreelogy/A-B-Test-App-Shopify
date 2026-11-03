@@ -425,7 +425,7 @@ export const chartStyles = `
 /* Ukuran angka mengikuti lebar kolom kartunya, bukan lebar layar: kolom metrik
    sempit walau layarnya lebar, dan "Rp11,676" harus muat tanpa terpotong. */
 .ab-kpi-row { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; container-type: inline-size; }
-.ab-kpi-value { white-space: nowrap; font-size: clamp(15px, 12.5cqi, 24px); line-height: 1.15; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.ab-kpi-value { white-space: nowrap; font-size: clamp(15px, 14cqi, 24px); line-height: 1.15; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
 .ab-tag { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 6px;
   font-size: 12px; font-weight: 650; color: #fff; line-height: 1; flex: none; }
 .ab-tag-a { background: ${AB_COLORS.a}; }
