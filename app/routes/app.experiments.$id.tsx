@@ -432,14 +432,14 @@ export default function ExperimentDetail() {
               {i > 0 && <s-divider direction="block" />}
               <s-stack direction="block" gap="small-200">
                 <s-text color="subdued">{k.label}</s-text>
-                <s-stack direction="inline" gap="small-200" alignItems="center">
+                <div className="ab-kpi-row">
                   <span className="ab-tag ab-tag-b">B</span>
                   <span className="ab-kpi-value" style={{ color: AB_COLORS.b }}>{k.b}</span>
-                </s-stack>
-                <s-stack direction="inline" gap="small-200" alignItems="center">
+                </div>
+                <div className="ab-kpi-row">
                   <span className="ab-tag ab-tag-a">A</span>
                   <span className="ab-kpi-sub">{k.a}</span>
-                </s-stack>
+                </div>
                 {k.delta !== null && (
                   <s-stack direction="inline">
                     <s-badge tone={k.significant ? (k.delta > 0 ? "success" : "critical") : "neutral"} icon={k.delta >= 0 ? "arrow-up" : "arrow-down"}>
