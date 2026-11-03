@@ -8,7 +8,7 @@
  * diisolasi, dan template B tetap menunjuk section milik variant A.
  */
 
-const HEADER = /^﻿?\s*\/\*[\s\S]*?\*\/\s*/;
+const HEADER = /^\uFEFF?\s*\/\*[\s\S]*?\*\/\s*/;
 
 /** Isi template tanpa header komentar Shopify (dan BOM). */
 export function stripTemplateHeader(templateJson: string): string {

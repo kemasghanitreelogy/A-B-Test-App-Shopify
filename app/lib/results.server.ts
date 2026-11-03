@@ -25,6 +25,8 @@ export interface ExperimentResults {
   B: ArmTotals;
   cvr: ProportionResult | null;
   atcRate: ProportionResult | null;
+  /** langkah funnel dari web pixel — diagnosis saja, tidak pernah penentu pemenang */
+  checkoutRate: ProportionResult | null;
   revenue: RevenueResult | null;
   srm: SrmResult | null;
   /** jumlah visitor yang variant-nya berbeda antara hitungan client dan server */
@@ -36,9 +38,13 @@ export interface ExperimentResults {
   /** alasan belum boleh disimpulkan, dua bahasa */
   blockers: Bi[];
   daily: Array<{ date: string; variant: string; visitors: number; orders: number; revenue: number }>;
+  /** Per jam, hanya selama HOURLY_WINDOW_DAYS pertama: tren harian baru punya
+   *  satu-dua titik di awal test, jadi grafik memakai ini sampai cukup hari. */
+  hourly: Array<{ hour: string; variant: string; visitors: number; orders: number }>;
 }
 
 const MIN_RUNTIME_DAYS = 14;
+const HOURLY_WINDOW_DAYS = 3;
 
 export async function computeResults(experimentId: string): Promise<ExperimentResults> {
   const experiment = await db.experiment.findUniqueOrThrow({ where: { id: experimentId } });
@@ -115,6 +121,31 @@ export async function computeResults(experimentId: string): Promise<ExperimentRe
     ORDER BY d.date ASC, d.variant ASC
   `;
 
+  const hourlyWanted =
+    experiment.startedAt !== null && Date.now() - experiment.startedAt.getTime() < HOURLY_WINDOW_DAYS * 864e5;
+  const hourly = hourlyWanted
+    ? await db.$queryRaw<Array<{ hour: Date; variant: string; visitors: bigint; orders: bigint }>>`
+        SELECT h.hour, h.variant,
+               COALESCE(a.visitors, 0) AS visitors,
+               COALESCE(c.orders, 0)   AS orders
+        FROM (
+          SELECT date_trunc('hour', "firstSeenAt") AS hour, variant FROM "Assignment" WHERE "experimentId" = ${experimentId}
+          UNION
+          SELECT date_trunc('hour', "createdAt") AS hour, variant FROM "Conversion" WHERE "experimentId" = ${experimentId}
+        ) h
+        LEFT JOIN (
+          SELECT date_trunc('hour', "firstSeenAt") AS hour, variant, COUNT(*) AS visitors
+          FROM "Assignment" WHERE "experimentId" = ${experimentId} GROUP BY 1, 2
+        ) a ON a.hour = h.hour AND a.variant = h.variant
+        LEFT JOIN (
+          SELECT date_trunc('hour', "createdAt") AS hour, variant, COUNT(*) AS orders
+          FROM "Conversion" WHERE "experimentId" = ${experimentId} AND "cancelledAt" IS NULL
+          GROUP BY 1, 2
+        ) c ON c.hour = h.hour AND c.variant = h.variant
+        ORDER BY h.hour ASC, h.variant ASC
+      `
+    : [];
+
   const arm = (variant: "A" | "B"): ArmTotals => ({
     visitors: assignments.find((a) => a.variant === variant)?._count._all ?? 0,
     addToCarts: Number(atc.find((a) => a.variant === variant)?.visitors ?? 0),
@@ -177,6 +208,10 @@ export async function computeResults(experimentId: string): Promise<ExperimentRe
       { n: A.visitors, x: A.addToCarts },
       { n: B.visitors, x: B.addToCarts },
     ),
+    checkoutRate: twoProportionTest(
+      { n: A.visitors, x: A.checkoutStarts },
+      { n: B.visitors, x: B.checkoutStarts },
+    ),
     revenue: revenuePerVisitorTest(
       { n: A.visitors, orders: A.orders, sum: A.revenue, sumSq: A.revenueSq },
       { n: B.visitors, orders: B.orders, sum: B.revenue, sumSq: B.revenueSq },
@@ -193,6 +228,13 @@ export async function computeResults(experimentId: string): Promise<ExperimentRe
       visitors: Number(d.visitors),
       orders: Number(d.orders),
       revenue: Number(d.revenue),
+    })),
+    hourly: hourly.map((h) => ({
+      // Kolom timestamp tanpa zona di Postgres; Prisma membacanya sebagai UTC.
+      hour: new Date(h.hour).toISOString(),
+      variant: h.variant,
+      visitors: Number(h.visitors),
+      orders: Number(h.orders),
     })),
   };
 }

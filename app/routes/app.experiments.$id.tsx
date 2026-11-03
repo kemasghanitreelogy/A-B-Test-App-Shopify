@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -8,6 +8,19 @@ import db from "../db.server";
 import { computeResults } from "../lib/results.server";
 import { getMainTheme, themeEditorUrl } from "../lib/theme.server";
 import { detectTemplateDrift, killSwitch, republishConfig, setStatus, startExperiment } from "../lib/experiment.server";
+import type { ExperimentResults } from "../lib/results.server";
+import {
+  AB_COLORS,
+  chartStyles,
+  fmt,
+  ForestPlot,
+  FunnelChart,
+  ProbabilityBar,
+  ProgressRow,
+  TrendChart,
+  type ForestRow,
+  type TrendPoint,
+} from "../components/ExperimentCharts";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
@@ -40,6 +53,8 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     editorUrl,
     templateDrift,
     shop: session.shop,
+    // Dihitung di server: render harus murni, dan jam di sini sama untuk semua.
+    hoursRunning: experiment.startedAt ? (Date.now() - experiment.startedAt.getTime()) / 36e5 : 0,
   };
 };
 
@@ -127,12 +142,41 @@ type FieldEvent = { target: EventTarget | null };
 const fieldValue = (e: FieldEvent) => (e.target as { value?: string } | null)?.value ?? "";
 
 
-const fmtPct = (n: number) => `${(n * 100).toFixed(2)}%`;
-const fmtIdr = (n: number) =>
-  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
+/** Sama dengan MIN_RUNTIME_DAYS di results.server.ts. */
+const MIN_DAYS = 14;
+
+/** Bentuk bersama uji proporsi dan uji pendapatan yang dipakai grafik. */
+type UpliftTest = { upliftRelative: number; ciLow: number; ciHigh: number; pValue: number } & (
+  | { rateA: number; rateB: number; probBBeatsA: number }
+  | { rpvA: number; rpvB: number }
+);
+
+const metricLabel = (m: string) =>
+  ({ cvr: "Conversion rate", atc_rate: "Add-to-cart rate", rpv: "Revenue per visitor", aov: "Average order value" })[m] ?? m;
+
+type BadgeTone = "success" | "critical" | "warning" | "neutral" | "info";
+
+/** Status keputusan: badge, kalimat pembuka. Urutan: data rusak > siap > belum. */
+function verdictFor(results: ExperimentResults, test: UpliftTest | null): { tone: BadgeTone; badge: string; lead: string } {
+  if (results.srm?.mismatch) return { tone: "critical", badge: "Data bermasalah", lead: "Jangan ambil kesimpulan" };
+  const wins = test ? (test.ciLow > 0 ? "B" : test.ciHigh < 0 ? "A" : null) : null;
+  if (results.readyToConclude) {
+    if (wins === "B") return { tone: "success", badge: "B menang", lead: "B lebih baik dari A" };
+    if (wins === "A") return { tone: "critical", badge: "A menang", lead: "B lebih buruk dari A" };
+    return { tone: "neutral", badge: "Tidak ada beda", lead: "Tidak ada beda bermakna" };
+  }
+  const lead = !test
+    ? "Belum ada data"
+    : test.upliftRelative > 0
+      ? "B sementara unggul"
+      : test.upliftRelative < 0
+        ? "A sementara unggul"
+        : "Belum ada beda";
+  return { tone: "warning", badge: "Belum boleh disimpulkan", lead };
+}
 
 export default function ExperimentDetail() {
-  const { experiment, results, editorUrl, templateDrift } = useLoaderData<typeof loader>();
+  const { experiment, results, editorUrl, templateDrift, hoursRunning } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
   const running = experiment.status === "running";
@@ -159,7 +203,81 @@ export default function ExperimentDetail() {
   }
 
   const primary = experiment.primaryMetric;
-  const test = primary === "rpv" || primary === "aov" ? null : primary === "atc_rate" ? results.atcRate : results.cvr;
+  const test: UpliftTest | null =
+    primary === "aov"
+      ? null
+      : primary === "rpv"
+        ? results.revenue
+        : primary === "atc_rate"
+          ? results.atcRate
+          : results.cvr;
+  const probB = test && "probBBeatsA" in test ? test.probBBeatsA : null;
+  const verdict = verdictFor(results, test);
+
+  const least = Math.min(results.A.visitors, results.B.visitors);
+  const etaDays =
+    hoursRunning > 1 && least > 0 && least < results.requiredPerArm
+      ? (results.requiredPerArm - least) / ((least / hoursRunning) * 24)
+      : null;
+
+  const useHourly = results.hourly.length > 0;
+  const trend: TrendPoint[] = useHourly
+    ? results.hourly.map((h) => ({ t: h.hour, variant: h.variant, visitors: h.visitors, orders: h.orders }))
+    : results.daily.map((d) => ({ t: `${d.date}T00:00:00Z`, variant: d.variant, visitors: d.visitors, orders: d.orders }));
+
+  const significant = (t: UpliftTest | null) => Boolean(t && (t.ciLow > 0 || t.ciHigh < 0));
+  const kpis = [
+    { label: "Visitor", a: fmt.int(results.A.visitors), b: fmt.int(results.B.visitors), delta: null, significant: false },
+    {
+      label: "Conversion rate",
+      a: results.cvr ? fmt.pct(results.cvr.rateA) : "—",
+      b: results.cvr ? fmt.pct(results.cvr.rateB) : "—",
+      delta: results.cvr?.upliftRelative ?? null,
+      significant: significant(results.cvr),
+    },
+    {
+      label: "Revenue per visitor",
+      a: results.revenue ? fmt.idr(results.revenue.rpvA) : "—",
+      b: results.revenue ? fmt.idr(results.revenue.rpvB) : "—",
+      delta: results.revenue?.upliftRelative ?? null,
+      significant: significant(results.revenue),
+    },
+    { label: "Order", a: fmt.int(results.A.orders), b: fmt.int(results.B.orders), delta: null, significant: false },
+  ];
+
+  const forest: ForestRow[] = [
+    { key: "cvr", label: "Conversion rate", t: results.cvr as UpliftTest | null, kind: "rate" as const },
+    { key: "rpv", label: "Revenue per visitor", t: results.revenue as UpliftTest | null, kind: "money" as const },
+    { key: "checkout", label: "Mulai checkout", t: results.checkoutRate as UpliftTest | null, kind: "rate" as const },
+    { key: "atc_rate", label: "Add-to-cart rate", t: results.atcRate as UpliftTest | null, kind: "rate" as const },
+  ]
+    .filter((r): r is typeof r & { t: UpliftTest } => r.t !== null && Number.isFinite(r.t.upliftRelative))
+    .map((r) => ({
+      key: r.key,
+      label: r.label,
+      primary: r.key === primary || (primary === "rpv" && r.key === "rpv"),
+      uplift: r.t.upliftRelative,
+      lo: r.t.ciLow,
+      hi: r.t.ciHigh,
+      detail: [
+        `Kenaikan ${fmt.signed(r.t.upliftRelative)} · p = ${r.t.pValue.toFixed(3)}`,
+        `Rentang 95%: ${fmt.signed(r.t.ciLow)} s/d ${fmt.signed(r.t.ciHigh)}`,
+        ...("rateA" in r.t ? [`A ${fmt.pct(r.t.rateA)} · B ${fmt.pct(r.t.rateB)}`] : []),
+        ...("rpvA" in r.t ? [`A ${fmt.idr(r.t.rpvA)} · B ${fmt.idr(r.t.rpvB)}`] : []),
+        ...("probBBeatsA" in r.t ? [`Peluang B lebih baik ${fmt.pct(r.t.probBBeatsA, 0)}`] : []),
+      ],
+    }));
+
+  const detailRows: Array<[string, string, string]> = [
+    ["Visitor", fmt.int(results.A.visitors), fmt.int(results.B.visitors)],
+    ["Add to cart", fmt.int(results.A.addToCarts), fmt.int(results.B.addToCarts)],
+    ["Mulai checkout", fmt.int(results.A.checkoutStarts), fmt.int(results.B.checkoutStarts)],
+    ["Order", fmt.int(results.A.orders), fmt.int(results.B.orders)],
+    ["Conversion rate", results.cvr ? fmt.pct(results.cvr.rateA) : "—", results.cvr ? fmt.pct(results.cvr.rateB) : "—"],
+    ["Revenue", fmt.idr(results.A.revenue), fmt.idr(results.B.revenue)],
+    ["Revenue per visitor", results.revenue ? fmt.idr(results.revenue.rpvA) : "—", results.revenue ? fmt.idr(results.revenue.rpvB) : "—"],
+    ["Average order value", results.revenue ? fmt.idr(results.revenue.aovA) : "—", results.revenue ? fmt.idr(results.revenue.aovB) : "—"],
+  ];
 
   return (
     <s-page heading={experiment.name}>
@@ -194,88 +312,174 @@ export default function ExperimentDetail() {
         </s-banner>
       )}
 
-      <s-section heading="Hasil">
-        <s-stack direction="block" gap="base">
-          <s-table>
-            <s-table-header-row>
-              <s-table-header>Metric</s-table-header>
-              <s-table-header>A (kontrol)</s-table-header>
-              <s-table-header>B (variant)</s-table-header>
-            </s-table-header-row>
-            <s-table-body>
-              <s-table-row>
-                <s-table-cell>Visitor</s-table-cell>
-                <s-table-cell>{results.A.visitors.toLocaleString("id-ID")}</s-table-cell>
-                <s-table-cell>{results.B.visitors.toLocaleString("id-ID")}</s-table-cell>
-              </s-table-row>
-              <s-table-row>
-                <s-table-cell>Add to cart</s-table-cell>
-                <s-table-cell>{results.A.addToCarts.toLocaleString("id-ID")}</s-table-cell>
-                <s-table-cell>{results.B.addToCarts.toLocaleString("id-ID")}</s-table-cell>
-              </s-table-row>
-              <s-table-row>
-                <s-table-cell>Order</s-table-cell>
-                <s-table-cell>{results.A.orders.toLocaleString("id-ID")}</s-table-cell>
-                <s-table-cell>{results.B.orders.toLocaleString("id-ID")}</s-table-cell>
-              </s-table-row>
-              <s-table-row>
-                <s-table-cell>Conversion rate</s-table-cell>
-                <s-table-cell>{results.cvr ? fmtPct(results.cvr.rateA) : "—"}</s-table-cell>
-                <s-table-cell>{results.cvr ? fmtPct(results.cvr.rateB) : "—"}</s-table-cell>
-              </s-table-row>
-              <s-table-row>
-                <s-table-cell>Revenue per visitor</s-table-cell>
-                <s-table-cell>{results.revenue ? fmtIdr(results.revenue.rpvA) : "—"}</s-table-cell>
-                <s-table-cell>{results.revenue ? fmtIdr(results.revenue.rpvB) : "—"}</s-table-cell>
-              </s-table-row>
-              <s-table-row>
-                <s-table-cell>Average order value</s-table-cell>
-                <s-table-cell>{results.revenue ? fmtIdr(results.revenue.aovA) : "—"}</s-table-cell>
-                <s-table-cell>{results.revenue ? fmtIdr(results.revenue.aovB) : "—"}</s-table-cell>
-              </s-table-row>
-            </s-table-body>
-          </s-table>
+      <style>{chartStyles}</style>
 
-          {test && (
-            <s-box padding="base" borderWidth="base" borderRadius="base" background="subdued">
-              <s-stack direction="block" gap="small-200">
-                <s-heading>
-                  Uplift {test.upliftRelative >= 0 ? "+" : ""}
-                  {(test.upliftRelative * 100).toFixed(1)}%
-                </s-heading>
+      <s-section heading="Ringkasan">
+        <s-grid gridTemplateColumns="@container (inline-size <= 640px) 1fr, 3fr 2fr" gap="large-200">
+          <s-stack direction="block" gap="small-300">
+            <s-stack direction="inline" gap="small-200" alignItems="center">
+              <s-badge tone={verdict.tone} size="large">{verdict.badge}</s-badge>
+              <s-text color="subdued">Metrik utama: {metricLabel(primary)}</s-text>
+            </s-stack>
+            {test ? (
+              <>
+                <s-text color="subdued">{verdict.lead}</s-text>
+                <span className="ab-hero-value" style={{ color: test.upliftRelative >= 0 ? AB_COLORS.b : AB_COLORS.text }}>
+                  {fmt.signed(test.upliftRelative)}
+                </span>
                 <s-paragraph>
-                  Interval kepercayaan 95%: {(test.ciLow * 100).toFixed(1)}% s/d {(test.ciHigh * 100).toFixed(1)}%
+                  Rentang 95%: {fmt.signed(test.ciLow)} s/d {fmt.signed(test.ciHigh)}.{" "}
+                  {test.ciLow > 0 || test.ciHigh < 0
+                    ? "Seluruh rentang di satu sisi nol, jadi bedanya nyata secara statistik."
+                    : "Rentang masih memotong nol, jadi bisa saja tidak ada beda."}
                 </s-paragraph>
-                <s-paragraph>
-                  p-value {test.pValue.toFixed(4)} · P(B lebih baik dari A) ={" "}
-                  {(test.probBBeatsA * 100).toFixed(1)}%
-                </s-paragraph>
-              </s-stack>
-            </s-box>
-          )}
-
-          {results.readyToConclude ? (
-            <s-banner tone="success" heading="Siap disimpulkan">
-              <s-paragraph>
-                Sample size dan durasi minimum sudah terpenuhi, dan tidak ada tanda data rusak.
-              </s-paragraph>
-            </s-banner>
-          ) : (
-            <s-banner tone="warning" heading="Belum boleh disimpulkan">
+              </>
+            ) : (
+              <s-paragraph>Uji statistik untuk metrik ini belum tersedia atau belum ada data.</s-paragraph>
+            )}
+            {!results.readyToConclude && (
               <s-unordered-list>
                 {results.blockers.map((b, i) => (
                   <s-list-item key={i}>{b.id}</s-list-item>
                 ))}
               </s-unordered-list>
-            </s-banner>
-          )}
+            )}
+          </s-stack>
 
+          <s-stack direction="block" gap="base">
+            {probB !== null && (
+              <s-stack direction="block" gap="small-200">
+                <s-text type="strong">Peluang B lebih baik dari A</s-text>
+                <ProbabilityBar probB={probB} />
+              </s-stack>
+            )}
+            <s-stack direction="block" gap="small-200">
+              <s-text type="strong">Kemajuan</s-text>
+              <ProgressRow
+                label="Sampel A"
+                value={results.A.visitors}
+                target={results.requiredPerArm}
+                color={AB_COLORS.a}
+                suffix={`${fmt.int(results.A.visitors)} / ${fmt.int(results.requiredPerArm)}`}
+              />
+              <ProgressRow
+                label="Sampel B"
+                value={results.B.visitors}
+                target={results.requiredPerArm}
+                color={AB_COLORS.b}
+                suffix={`${fmt.int(results.B.visitors)} / ${fmt.int(results.requiredPerArm)}`}
+              />
+              <ProgressRow
+                label="Durasi"
+                value={results.daysRunning}
+                target={MIN_DAYS}
+                color={AB_COLORS.text}
+                suffix={`${results.daysRunning} / ${MIN_DAYS} hari`}
+              />
+              {etaDays !== null && (
+                <s-text color="subdued">Dengan laju sekarang, sampel cukup sekitar {fmt.int(etaDays)} hari lagi.</s-text>
+              )}
+            </s-stack>
+          </s-stack>
+        </s-grid>
+      </s-section>
+
+      <s-section accessibilityLabel="Angka utama">
+        <s-grid gridTemplateColumns="@container (inline-size <= 520px) 1fr 1fr, 1fr auto 1fr auto 1fr auto 1fr" gap="base">
+          {kpis.map((k, i) => (
+            <Fragment key={k.label}>
+              {i > 0 && <s-divider direction="block" />}
+              <s-stack direction="block" gap="small-200">
+                <s-text color="subdued">{k.label}</s-text>
+                <span className="ab-kpi-value" style={{ color: AB_COLORS.b }}>{k.b}</span>
+                <span className="ab-kpi-sub">A: {k.a}</span>
+                {k.delta !== null && (
+                  <s-stack direction="inline">
+                    <s-badge tone={k.significant ? (k.delta > 0 ? "success" : "critical") : "neutral"} icon={k.delta >= 0 ? "arrow-up" : "arrow-down"}>
+                      {fmt.signed(k.delta)}
+                    </s-badge>
+                  </s-stack>
+                )}
+              </s-stack>
+            </Fragment>
+          ))}
+        </s-grid>
+      </s-section>
+
+      <s-section heading="Kenaikan B dibanding A per metrik">
+        <s-stack direction="block" gap="base">
           <s-paragraph>
-            <s-text tone="neutral">
-              Metric selain primary metric ({experiment.primaryMetric}) hanya untuk diagnosis. Mengambil
-              keputusan berdasarkan metric mana pun yang kebetulan menang adalah p-hacking.
+            <s-text color="subdued">
+              Titik = perkiraan kenaikan, batang = rentang 95%. Kanan dari garis nol berarti B lebih baik. Hanya metrik
+              utama yang dipakai untuk memutuskan; metrik lain untuk diagnosis.
             </s-text>
           </s-paragraph>
+          <div className="ab-legend">
+            <span><i className="ab-swatch" style={{ background: AB_COLORS.a }} />A · kontrol</span>
+            <span><i className="ab-swatch" style={{ background: AB_COLORS.b }} />B · variant</span>
+            <span><i className="ab-swatch" style={{ background: AB_COLORS.ok }} />Nyata lebih baik</span>
+            <span><i className="ab-swatch" style={{ background: AB_COLORS.bad }} />Nyata lebih buruk</span>
+          </div>
+          {forest.length > 0 ? <ForestPlot rows={forest} /> : <s-paragraph>Belum ada data.</s-paragraph>}
+        </s-stack>
+      </s-section>
+
+      <s-grid gridTemplateColumns="@container (inline-size <= 800px) 1fr, 1fr 1fr" gap="base">
+        <s-section heading="Funnel">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              <s-text color="subdued">Visitor unik per langkah dan persentasenya dari semua visitor grup.</s-text>
+            </s-paragraph>
+            <FunnelChart
+              steps={[
+                { label: "Visitor", a: results.A.visitors, b: results.B.visitors },
+                { label: "Add to cart", a: results.A.addToCarts, b: results.B.addToCarts },
+                { label: "Mulai checkout", a: results.A.checkoutStarts, b: results.B.checkoutStarts },
+                { label: "Order", a: results.A.orders, b: results.B.orders },
+              ]}
+            />
+          </s-stack>
+        </s-section>
+        <s-section heading="Konversi kumulatif">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              <s-text color="subdued">
+                Order ÷ visitor sejak test mulai, {useHourly ? "per jam (3 hari pertama)" : "per hari"}, waktu WIB. Garis
+                yang masih naik-turun tajam berarti sampel masih kecil.
+              </s-text>
+            </s-paragraph>
+            <TrendChart points={trend} hourly={useHourly} />
+          </s-stack>
+        </s-section>
+      </s-grid>
+
+      <s-section heading="Detail angka">
+        <s-stack direction="block" gap="base">
+          <s-table>
+            <s-table-header-row>
+              <s-table-header>Metric</s-table-header>
+              <s-table-header format="numeric">A (kontrol)</s-table-header>
+              <s-table-header format="numeric">B (variant)</s-table-header>
+            </s-table-header-row>
+            <s-table-body>
+              {detailRows.map(([label, a, b]) => (
+                <s-table-row key={label}>
+                  <s-table-cell>{label}</s-table-cell>
+                  <s-table-cell>{a}</s-table-cell>
+                  <s-table-cell>{b}</s-table-cell>
+                </s-table-row>
+              ))}
+            </s-table-body>
+          </s-table>
+          {test && (
+            <s-paragraph>
+              <s-text color="subdued">
+                {metricLabel(primary)}: p-value {test.pValue.toFixed(4)}
+                {probB !== null ? ` · P(B lebih baik dari A) = ${fmt.pct(probB, 1)}` : ""}. Mengambil keputusan dari
+                metrik lain yang kebetulan menang adalah p-hacking.
+              </s-text>
+            </s-paragraph>
+          )}
         </s-stack>
       </s-section>
 
