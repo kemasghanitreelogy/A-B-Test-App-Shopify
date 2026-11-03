@@ -21,7 +21,7 @@ export const AB_COLORS = {
   muted: "#616161",
 };
 
-const nf = (o?: Intl.NumberFormatOptions) => new Intl.NumberFormat("id-ID", o);
+const nf = (o?: Intl.NumberFormatOptions) => new Intl.NumberFormat("en-US", o);
 export const fmt = {
   int: (n: number) => nf({ maximumFractionDigits: 0 }).format(n),
   pct: (n: number, d = 2) => nf({ style: "percent", minimumFractionDigits: d, maximumFractionDigits: d }).format(n),
@@ -112,7 +112,7 @@ export function ForestPlot({ rows }: { rows: ForestRow[] }) {
 
   return (
     <div className="ab-chart" ref={ref} onMouseLeave={() => setTip(null)}>
-      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Kenaikan B dibanding A per metrik dengan rentang 95%">
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="B vs A lift per metric with 95% intervals">
         {ticks.map((t) => (
           <g key={t}>
             <line x1={x(t)} x2={x(t)} y1={top} y2={H - 22} stroke={AB_COLORS.grid} />
@@ -137,10 +137,10 @@ export function ForestPlot({ rows }: { rows: ForestRow[] }) {
               <rect x={0} y={y} width={W} height={rowH} fill="transparent" />
               <text x={8} y={y + 17} className={r.primary ? "ab-label ab-strong" : "ab-label"}>
                 {r.label}
-                {r.primary ? " · metrik utama" : ""}
+                {r.primary ? " · primary metric" : ""}
               </text>
               <text x={W - 8} y={y + 17} textAnchor="end" className="ab-tick">
-                {fmt.signed(r.uplift)} ({fmt.signed(r.lo, 0)} s/d {fmt.signed(r.hi, 0)})
+                {fmt.signed(r.uplift)} ({fmt.signed(r.lo, 0)} to {fmt.signed(r.hi, 0)})
               </text>
               <line x1={x(r.lo)} x2={x(r.hi)} y1={y + 38} y2={y + 38} stroke={c} strokeOpacity={0.35} strokeWidth={r.primary ? 10 : 7} strokeLinecap="round" />
               <circle cx={x(r.uplift)} cy={y + 38} r={r.primary ? 7 : 5.5} fill={c} stroke="#fff" strokeWidth={2} />
@@ -159,15 +159,15 @@ export function ForestPlot({ rows }: { rows: ForestRow[] }) {
 export function ProbabilityBar({ probB }: { probB: number }) {
   const a = 1 - probB;
   return (
-    <div className="ab-prob" role="img" aria-label={`Peluang B lebih baik ${fmt.pct(probB, 0)}`}>
+    <div className="ab-prob" role="img" aria-label={`Chance B beats A ${fmt.pct(probB, 0)}`}>
       <div className="ab-prob-bar">
         <span style={{ width: `${a * 100}%`, background: AB_COLORS.a }} />
         <span style={{ width: `${probB * 100}%`, background: AB_COLORS.b }} />
-        <i className="ab-prob-mark" style={{ left: "95%" }} title="Ambang 95%" />
+        <i className="ab-prob-mark" style={{ left: "95%" }} title="95% threshold" />
       </div>
       <div className="ab-prob-legend">
-        <span>A lebih baik {fmt.pct(a, 0)}</span>
-        <span>B lebih baik {fmt.pct(probB, 0)}</span>
+        <span>A better {fmt.pct(a, 0)}</span>
+        <span>B better {fmt.pct(probB, 0)}</span>
       </div>
     </div>
   );
@@ -212,7 +212,7 @@ export function FunnelChart({ steps }: { steps: FunnelStep[] }) {
 
   return (
     <div className="ab-chart" ref={ref} onMouseLeave={() => setTip(null)}>
-      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Funnel visitor sampai order, A dibanding B">
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Funnel from visitors to orders, A vs B">
         {steps.map((s, i) => {
           const y = i * rowH + (labelW ? 6 : 22);
           const prev = steps[i - 1];
@@ -240,9 +240,9 @@ export function FunnelChart({ steps }: { steps: FunnelStep[] }) {
                         ...p,
                         head: `${s.label} · ${k.toUpperCase()}`,
                         rows: [
-                          { color, text: `${fmt.int(n)} visitor` },
-                          { text: `${fmt.pct(n / base)} dari semua visitor` },
-                          ...(step !== null ? [{ text: `${fmt.pct(step, 1)} dari langkah sebelumnya` }] : []),
+                          { color, text: `${fmt.int(n)} visitors` },
+                          { text: `${fmt.pct(n / base)} of all visitors` },
+                          ...(step !== null ? [{ text: `${fmt.pct(step, 1)} of the previous step` }] : []),
                         ],
                       });
                     }}
@@ -283,7 +283,7 @@ export function TrendChart({ points, hourly }: { points: TrendPoint[]; hourly: b
   const [hover, setHover] = useState<number | null>(null);
   const times = [...new Set(points.map((p) => p.t))].sort();
   if (times.length < 2) {
-    return <p className="ab-empty">Grafik muncul setelah data terkumpul di dua periode atau lebih.</p>;
+    return <p className="ab-empty">The chart appears once data covers two or more periods.</p>;
   }
   const series = (["A", "B"] as const).map((v) => {
     let vis = 0;
@@ -310,7 +310,7 @@ export function TrendChart({ points, hourly }: { points: TrendPoint[]; hourly: b
   const slot = (W - m.l - m.r) / times.length;
   const bw = Math.max(1, Math.min(10, slot / 2 - 1));
   const label = (t: string) =>
-    new Intl.DateTimeFormat("id-ID", hourly
+    new Intl.DateTimeFormat("en-GB", hourly
       ? { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit" }
       : { timeZone: "Asia/Jakarta", day: "numeric", month: "short" }).format(new Date(t));
   const every = Math.ceil(times.length / (W < 480 ? 4 : 8));
@@ -329,10 +329,10 @@ export function TrendChart({ points, hourly }: { points: TrendPoint[]; hourly: b
     const i = Math.max(0, Math.min(times.length - 1, Math.round(((p.x - m.l) / (W - m.l - m.r)) * (times.length - 1))));
     setTip({
       ...p,
-      head: hourly ? `s/d ${label(new Date(new Date(times[i]).getTime() + 36e5).toISOString())} WIB` : label(times[i]),
+      head: hourly ? `until ${label(new Date(new Date(times[i]).getTime() + 36e5).toISOString())} WIB` : label(times[i]),
       rows: series.map((s, k) => ({
         color: colors[k],
-        text: `${k ? "B" : "A"}: ${fmt.pct(s[i].cvr)} · ${fmt.int(s[i].ord)} order / ${fmt.int(s[i].vis)} · +${fmt.int(s[i].add)} visitor`,
+        text: `${k ? "B" : "A"}: ${fmt.pct(s[i].cvr)} · ${fmt.int(s[i].ord)} orders / ${fmt.int(s[i].vis)} · +${fmt.int(s[i].add)} visitors`,
       })),
     });
     setHover(i);
@@ -340,7 +340,7 @@ export function TrendChart({ points, hourly }: { points: TrendPoint[]; hourly: b
 
   return (
     <div className="ab-chart" ref={ref} onMouseLeave={() => { setTip(null); setHover(null); }}>
-      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Konversi kumulatif A dan B dari waktu ke waktu">
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Cumulative conversion of A and B over time">
         {yTicks.map((t) => (
           <g key={t}>
             <line x1={m.l} x2={W - m.r} y1={y(t)} y2={y(t)} stroke={AB_COLORS.grid} />
@@ -369,7 +369,7 @@ export function TrendChart({ points, hourly }: { points: TrendPoint[]; hourly: b
           </g>
         ))}
         <text x={m.l} y={barTop - 8} className="ab-tick">
-          Visitor baru per {hourly ? "jam" : "hari"}
+          New visitors per {hourly ? "hour" : "day"}
         </text>
         {series.map((s, k) =>
           s.map((p, i) => {

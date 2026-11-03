@@ -46,13 +46,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const form = await request.formData();
 
   const name = String(form.get("name") ?? "").trim();
-  if (!name) return { error: "Nama eksperimen wajib diisi." };
+  if (!name) return { error: "Experiment name is required." };
 
   const suffix = String(form.get("variantBSuffix") ?? "").trim() || "ab-b";
   if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(suffix)) {
     return {
       error:
-        "Template suffix hanya boleh huruf kecil, angka, dan tanda hubung (dipakai sebagai nama file templates/product.<suffix>.json).",
+        "The template suffix may only contain lowercase letters, numbers and hyphens (it becomes the file name templates/product.<suffix>.json).",
     };
   }
 
@@ -121,32 +121,32 @@ export default function Index() {
   return (
     <s-page heading="A/B Test PDP">
       <s-button slot="primary-action" onClick={() => setShowForm((v) => !v)}>
-        {showForm ? "Batal" : "Eksperimen baru"}
+        {showForm ? "Cancel" : "New experiment"}
       </s-button>
 
       {showForm && (
-        <s-section heading="Eksperimen baru">
+        <s-section heading="New experiment">
           <s-stack direction="block" gap="base">
             <s-text-field
-              label="Nama"
+              label="Name"
               value={form.name}
               onInput={set("name")}
               placeholder="PDP redesign — hero + trust badges"
             />
             <s-text-area
-              label="Hipotesis"
+              label="Hypothesis"
               value={form.hypothesis}
               onInput={set("hypothesis")}
-              placeholder="Memindahkan trust badge ke atas fold akan menaikkan conversion rate karena keraguan soal keaslian produk muncul sebelum customer scroll."
+              placeholder="Moving the trust badges above the fold will raise conversion rate, because doubts about authenticity come up before customers scroll."
             />
             <s-text-field
-              label="Template suffix variant B"
+              label="Variant B template suffix"
               value={form.variantBSuffix}
               onInput={set("variantBSuffix")}
-              details="Akan dibuat sebagai templates/product.<suffix>.json di live theme."
+              details="Created as templates/product.<suffix>.json on the live theme."
             />
             <s-number-field
-              label="Traffic ke variant B (%)"
+              label="Traffic to variant B (%)"
               value={form.splitPctB}
               onInput={set("splitPctB")}
               min={5}
@@ -159,23 +159,23 @@ export default function Index() {
               <s-option value="aov">Average order value</s-option>
             </s-select>
             <s-select label="Minimum detectable effect" value={form.mdeRelative} onChange={set("mdeRelative")}>
-              <s-option value="0.1">10% relatif — butuh sample sangat besar</s-option>
-              <s-option value="0.15">15% relatif</s-option>
-              <s-option value="0.2">20% relatif — realistis untuk redesign</s-option>
-              <s-option value="0.3">30% relatif</s-option>
+              <s-option value="0.1">10% relative (needs a very large sample)</s-option>
+              <s-option value="0.15">15% relative</s-option>
+              <s-option value="0.2">20% relative (realistic for a redesign)</s-option>
+              <s-option value="0.3">30% relative</s-option>
             </s-select>
             <s-text-field
               label="Baseline conversion rate"
               value={form.baselineCvr}
               onInput={set("baselineCvr")}
-              details="Ambil dari Shopify Analytics. 0.02 = 2%."
+              details="Take it from Shopify Analytics. 0.02 = 2%."
             />
 
             <s-banner tone="info">
               <s-paragraph>
-                Dengan angka ini dibutuhkan <s-text type="strong">{required.toLocaleString("id-ID")}</s-text>{" "}
-                visitor per grup. Primary metric dan MDE akan dikunci begitu eksperimen mulai berjalan —
-                mengubahnya di tengah test adalah p-hacking dan membuat hasilnya tidak bisa dipercaya.
+                With these numbers you need <s-text type="strong">{required.toLocaleString("en-US")}</s-text>{" "}
+                visitors per group. The primary metric and MDE are locked once the experiment starts. Changing
+                them mid-test is p-hacking and makes the result untrustworthy.
               </s-paragraph>
             </s-banner>
 
@@ -190,23 +190,23 @@ export default function Index() {
               {...(fetcher.state !== "idle" ? { loading: true } : {})}
               onClick={() => fetcher.submit(form, { method: "POST" })}
             >
-              Buat eksperimen
+              Create experiment
             </s-button>
           </s-stack>
         </s-section>
       )}
 
-      <s-section heading="Eksperimen">
+      <s-section heading="Experiments">
         {experiments.length === 0 ? (
-          <s-paragraph>Belum ada eksperimen.</s-paragraph>
+          <s-paragraph>No experiments yet.</s-paragraph>
         ) : (
           <s-table>
             <s-table-header-row>
-              <s-table-header>Nama</s-table-header>
+              <s-table-header>Name</s-table-header>
               <s-table-header>Status</s-table-header>
               <s-table-header>Metric</s-table-header>
               <s-table-header>Split B</s-table-header>
-              <s-table-header>Visitor</s-table-header>
+              <s-table-header>Visitors</s-table-header>
             </s-table-header-row>
             <s-table-body>
               {experiments.map((e) => (
@@ -219,7 +219,7 @@ export default function Index() {
                   </s-table-cell>
                   <s-table-cell>{METRIC_LABEL[e.primaryMetric] ?? e.primaryMetric}</s-table-cell>
                   <s-table-cell>{e.splitPctB}%</s-table-cell>
-                  <s-table-cell>{e.visitors.toLocaleString("id-ID")}</s-table-cell>
+                  <s-table-cell>{e.visitors.toLocaleString("en-US")}</s-table-cell>
                 </s-table-row>
               ))}
             </s-table-body>
