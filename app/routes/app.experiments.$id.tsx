@@ -6,6 +6,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { computeResults } from "../lib/results.server";
+import { previewImage } from "../lib/previews.server";
 import { getMainTheme, themeEditorUrl } from "../lib/theme.server";
 import { detectTemplateDrift, killSwitch, republishConfig, setStatus, startExperiment } from "../lib/experiment.server";
 import type { ExperimentResults } from "../lib/results.server";
@@ -55,6 +56,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     shop: session.shop,
     // Dihitung di server: render harus murni, dan jam di sini sama untuk semua.
     hoursRunning: experiment.startedAt ? (Date.now() - experiment.startedAt.getTime()) / 36e5 : 0,
+    previews: { A: previewImage(experiment.id, "a"), B: previewImage(experiment.id, "b") },
   };
 };
 
@@ -107,8 +109,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     if (intent === "start") {
       const res = await startExperiment(admin, session.shop, id);
       const base = res.templateCreated
-        ? `Experiment running. templates/product.${res.themeEditorSuffix}.json was created as a copy of the current product template. Build the B design in the theme editor.`
-        : `Experiment running, using the existing templates/product.${res.themeEditorSuffix}.json.`;
+        ? "Experiment running. Variant B starts as a copy of the current product page. Build the B design in the theme editor."
+        : "Experiment running with the existing variant B design.";
       // Terjemahan template tidak ikut tersalin sendiri; kalau ada yang tertinggal,
       // variant B tampil berbahasa Inggris tanpa satu pun error muncul.
       return { ok: [base, translationNote(res), ...res.warnings].filter(Boolean).join(" ") };
@@ -176,7 +178,7 @@ function verdictFor(results: ExperimentResults, test: UpliftTest | null): { tone
 }
 
 export default function ExperimentDetail() {
-  const { experiment, results, editorUrl, templateDrift, hoursRunning } = useLoaderData<typeof loader>();
+  const { experiment, results, editorUrl, templateDrift, hoursRunning, previews, shop } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
   const running = experiment.status === "running";
@@ -216,26 +218,34 @@ export default function ExperimentDetail() {
 
   // Apa yang dilihat tiap grup: template untuk eksperimen template, komponen untuk eksperimen komponen.
   const isComponent = experiment.kind === "component";
+  // Halaman asli tiap variant. ?_tl_ab_off=1 mengecualikan perangkat yang membukanya,
+  // jadi tim bisa melihat tanpa ikut terhitung di test.
+  const handle = experiment.targetHandles[0];
+  const liveUrl = (arm: "A" | "B") => {
+    if (isComponent || !handle) return null;
+    const view = arm === "B" ? experiment.variantBSuffix : experiment.variantASuffix;
+    return `https://${shop}/products/${handle}?_tl_ab_off=1${view ? `&view=${view}` : ""}`;
+  };
   const arms = [
     {
-      key: "A",
+      key: "A" as const,
       title: "Control",
       traffic: 100 - experiment.splitPctB,
-      description: "The current live page, unchanged. Visitors see what they see today.",
-      source: isComponent
-        ? `Component: ${experiment.component ?? "—"} (live version)`
-        : `Template: templates/product${experiment.variantASuffix ? `.${experiment.variantASuffix}` : ""}.json`,
+      description: "The current live page, unchanged.",
+      preview: previews.A,
+      url: liveUrl("A"),
     },
     {
-      key: "B",
+      key: "B" as const,
       title: "Variant",
       traffic: experiment.splitPctB,
-      description: "The new design being tested against the control.",
-      source: isComponent
-        ? `Component: ${experiment.component ?? "—"} (from ${experiment.variantBSourceThemeName ?? "draft theme"})`
-        : `Template: templates/product.${experiment.variantBSuffix}.json`,
+      description: "The new design being tested.",
+      preview: previews.B,
+      url: liveUrl("B"),
     },
   ];
+  const shotDate = (iso: string) =>
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", day: "numeric", month: "short", year: "numeric" }).format(new Date(iso));
 
   const least = Math.min(results.A.visitors, results.B.visitors);
   const etaDays =
@@ -329,8 +339,8 @@ export default function ExperimentDetail() {
       {templateDrift && (
         <s-banner tone="warning" heading="Variant B template changed while the test is running">
           <s-paragraph>
-            templates/product.{experiment.variantBSuffix}.json differs from when the experiment started. Data
-            from before and after the change is not comparable. Consider restarting the experiment.
+            The variant B design differs from when the experiment started. Data from before and after the
+            change is not comparable. Consider restarting the experiment.
           </s-paragraph>
         </s-banner>
       )}
@@ -348,7 +358,22 @@ export default function ExperimentDetail() {
                   <s-badge>{v.traffic}% of traffic</s-badge>
                 </s-stack>
                 <s-text color="subdued">{v.description}</s-text>
-                <s-text color="subdued">{v.source}</s-text>
+                {v.preview && (
+                  <img
+                    className="ab-preview"
+                    src={v.preview.url}
+                    alt={`Product page shown to group ${v.key}, first screen on mobile`}
+                    loading="lazy"
+                  />
+                )}
+                {v.preview && (
+                  <s-text color="subdued">Mobile, first screen · captured {shotDate(v.preview.capturedAt)}</s-text>
+                )}
+                {v.url && (
+                  <s-link href={v.url} target="_blank">
+                    Preview live page
+                  </s-link>
+                )}
               </s-stack>
             </s-box>
           ))}
@@ -618,9 +643,6 @@ export default function ExperimentDetail() {
 
       <s-section slot="aside" heading="Variant B design">
         <s-stack direction="block" gap="base">
-          <s-paragraph>
-            Template: <s-text type="strong">templates/product.{experiment.variantBSuffix}.json</s-text>
-          </s-paragraph>
           {editorUrl && (
             <s-link href={editorUrl} target="_blank">
               Open variant B in the theme editor
@@ -628,7 +650,7 @@ export default function ExperimentDetail() {
           )}
           <s-paragraph>
             <s-text tone="neutral">
-              To QA without being bucketed, add <s-text type="strong">?_tl_ab_off=1</s-text> to the URL.
+              Opening a live preview excludes your device from the test, so your visits are never counted.
             </s-text>
           </s-paragraph>
         </s-stack>

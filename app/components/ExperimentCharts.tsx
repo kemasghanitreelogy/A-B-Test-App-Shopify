@@ -430,6 +430,8 @@ export const chartStyles = `
   font-size: 12px; font-weight: 650; color: #fff; line-height: 1; flex: none; }
 .ab-tag-a { background: ${AB_COLORS.a}; }
 .ab-tag-b { background: ${AB_COLORS.b}; }
+.ab-preview { display: block; width: 100%; max-width: 280px; aspect-ratio: 390 / 600; object-fit: cover; object-position: top;
+  border-radius: 12px; border: 1px solid #e3e3e3; background: #f6f6f6; }
 .ab-kpi-sub { font-size: 12px; color: ${AB_COLORS.muted}; font-variant-numeric: tabular-nums; }
 .ab-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: ${AB_COLORS.muted}; }
 .ab-legend span { display: inline-flex; align-items: center; gap: 6px; }
