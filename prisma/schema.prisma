@@ -190,7 +190,7 @@ model OrderIntake {
   /// web | shop_app | pos | shopify_draft_order | …
   sourceName      String?
   createdAt       DateTime
-  /// attributed | unattributed | excluded (POS, draft order: bukan storefront)
+  /// attributed | no_target_product (terpapar tapi tak memuat produk yang dites) | not_exposed | unattributed | excluded (POS, draft order: bukan storefront)
   status          String
   /// cart_attr | checkout_token | cart_token | null
   attributionKind String?

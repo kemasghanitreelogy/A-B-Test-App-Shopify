@@ -985,12 +985,41 @@
   /* Penangkap add-to-cart dipasang di SEMUA halaman. Yang berbeda hanya
      isinya: di halaman yang ikut test, cart diberi variant dan event funnel
      dikirim; di halaman lain, cart hanya diberi visitor id. */
-  function onAddToCart() {
-    stampCart(experiment, variant);
+  /* Eksperimen produk hanya menghitung add-to-cart yang benar-benar memasukkan
+     produk yang dites. Di PDP kapsul ada juga tombol bundel, FBT, dan upsell
+     yang menambahkan produk LAIN — tanpa saringan ini klik-klik itu ikut
+     terhitung sebagai add-to-cart kapsul. Keranjang tetap diberi variant
+     (stampCart) apa pun isinya, supaya order kapsul berikutnya tetap terlacak;
+     yang disaring hanya hitungan funnel-nya. */
+  function addedProductIds(text) {
+    var ids = [];
+    try {
+      var json = JSON.parse(text);
+      var items = json && json.items ? json.items : [json];
+      for (var i = 0; items.length > i; i++) {
+        var it = items[i];
+        if (!it || it.product_id == null) continue;
+        var gifted = it.properties && it.properties._Gifted;
+        if (!gifted) ids.push(String(it.product_id));
+      }
+    } catch (e) {}
+    return ids;
+  }
+
+  function hasTargetProduct(ids) {
+    return !!CTX.productId && ids.indexOf(String(CTX.productId)) !== -1;
+  }
+
+  function trackAddToCart() {
     if (experiment && variant) {
       track(experiment.id, variant, "add_to_cart", CTX.productId, false);
       broadcast("add_to_cart", experiment.id, variant, { product_id: CTX.productId || "" });
     }
+  }
+
+  function onAddToCart(responseText) {
+    stampCart(experiment, variant);
+    if (hasTargetProduct(addedProductIds(responseText))) trackAddToCart();
     trackComponentFunnel("add_to_cart");
   }
 
@@ -1013,8 +1042,15 @@
         var promise = origFetch.apply(this, arguments);
         if (url.indexOf("/cart/add") !== -1) {
           promise.then(function (res) {
-            if (res && res.ok) onAddToCart();
-            return res;
+            if (!res || !res.ok) return;
+            // clone(): body asli tetap utuh untuk tema yang membacanya.
+            var copy = null;
+            try { copy = res.clone(); } catch (e) {}
+            if (copy && typeof copy.text === "function") {
+              copy.text().then(onAddToCart, function () { onAddToCart(""); });
+            } else {
+              onAddToCart("");
+            }
           }).catch(function () {});
         }
         return promise;
@@ -1042,10 +1078,10 @@
             body: JSON.stringify({ attributes: cartAttributes(experiment, variant) })
           }).catch(function () {});
         } catch (err) {}
-        if (experiment && variant) {
-          track(experiment.id, variant, "add_to_cart", CTX.productId, false);
-          broadcast("add_to_cart", experiment.id, variant, { product_id: CTX.productId || "" });
-        }
+        // Form native tidak punya jawaban JSON; yang dikirim hanya id varian.
+        var variantId = "";
+        try { variantId = String(new FormData(form).get("id") || ""); } catch (err) {}
+        if (variantId && (CTX.variantIds || []).map(String).indexOf(variantId) !== -1) trackAddToCart();
         trackComponentFunnel("add_to_cart");
       },
       true
@@ -1057,7 +1093,11 @@
       try {
         if (String(url).indexOf("/cart/add") !== -1) {
           this.addEventListener("load", function () {
-            if (this.status >= 200 && 300 > this.status) onAddToCart();
+            if (this.status >= 200 && 300 > this.status) {
+              var text = "";
+              try { text = this.responseType === "" || this.responseType === "text" ? this.responseText : JSON.stringify(this.response); } catch (e) {}
+              onAddToCart(text);
+            }
           });
         }
       } catch (e) {}

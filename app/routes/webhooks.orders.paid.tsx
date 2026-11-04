@@ -8,6 +8,7 @@ import { touchHeartbeat } from "../lib/heartbeat.server";
 import { enqueue } from "../lib/posthog/client.server";
 import { orderPaidEvent } from "../lib/posthog/events.server";
 import { tagOrderVariant, variantLabel } from "../lib/order-variant.server";
+import { isProductScoped, orderHasTargetProduct, targetProductIds, type OrderLineItem } from "../lib/target-products.server";
 
 /**
  * SUMBER KEBENARAN konversi.
@@ -36,6 +37,7 @@ interface OrderPayload {
   checkout_token?: string | null;
   cart_token?: string | null;
   note_attributes?: Array<{ name?: string; value?: string }>;
+  line_items?: OrderLineItem[];
 }
 
 async function keyMatches(kind: "checkout_token" | "cart_token", value: string | null | undefined): Promise<SecondaryKeyMatch[]> {
@@ -72,7 +74,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     where: { id: { in: [...resolved.assignments.keys()] }, shop },
   });
   const known = new Map(experiments.map((e) => [e.id, e]));
-  const attributed = [...resolved.assignments].filter(([id]) => known.has(id));
+  const assigned = [...resolved.assignments].filter(([id]) => known.has(id));
+
+  /* Eksperimen produk hanya menghitung order yang memuat produk yang dites
+   * (lihat lib/target-products.server.ts). Order dari pengunjung yang terpapar
+   * tapi membeli produk lain saja dicatat `no_target_product`, bukan konversi. */
+  const attributed: typeof assigned = [];
+  for (const entry of assigned) {
+    const experiment = known.get(entry[0])!;
+    if (!isProductScoped(experiment)) {
+      attributed.push(entry);
+      continue;
+    }
+    let ids: Set<string>;
+    try {
+      if (!admin) throw new Error(`tidak ada sesi admin untuk ${shop}`);
+      ids = await targetProductIds(admin, experiment.targetHandles);
+    } catch (error) {
+      // Lepas penanda dedupe supaya kiriman ulang Shopify diproses lagi.
+      const webhookId = request.headers.get("X-Shopify-Webhook-Id");
+      if (webhookId) await db.webhookLog.deleteMany({ where: { webhookId } });
+      throw error;
+    }
+    if (orderHasTargetProduct(order?.line_items, ids)) attributed.push(entry);
+  }
 
   /* Skrip storefront menempelkan `_tl_vid` pada SETIAP add-to-cart, terpapar
    * atau tidak. Jadi order yang membawa visitor id tanpa penugasan berasal dari
@@ -83,7 +108,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     ? "excluded"
     : attributed.length > 0
       ? "attributed"
-      : resolved.visitorId
+      : assigned.length > 0
+        ? "no_target_product"
+        : resolved.visitorId
         ? "not_exposed"
         : "unattributed";
 

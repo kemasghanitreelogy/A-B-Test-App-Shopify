@@ -108,14 +108,16 @@ const CHECKS: Array<{ id: string; label: Bi; run: CheckFn }> = [
       const since = experiment.startedAt ?? experiment.createdAt;
       const g = await db.orderIntake.groupBy({ by: ["status"], where: { shop: experiment.shop, createdAt: { gte: since } }, _count: { _all: true } });
       const count = (s: string) => g.find((r) => r.status === s)?._count._all ?? 0;
-      const attributed = count("attributed");
+      // no_target_product = order beratribusi yang sengaja tidak dihitung karena
+      // tidak memuat produk yang dites; jejaknya utuh, jadi ikut coverage.
+      const attributed = count("attributed") + count("no_target_product");
       const unattributed = count("unattributed");
       const notExposed = count("not_exposed");
       // Pengunjung yang tidak pernah membuka halaman produk memang bukan bagian
       // test; yang mengukur kesehatan hanya order yang jejaknya hilang sama sekali.
       const total = attributed + unattributed;
-      const tailId = `${notExposed} tidak terpapar · ${count("excluded")} dikecualikan (POS/draft)`;
-      const tailEn = `${notExposed} not exposed · ${count("excluded")} excluded (POS/draft)`;
+      const tailId = `${count("no_target_product")} tanpa produk target · ${notExposed} tidak terpapar · ${count("excluded")} dikecualikan (POS/draft)`;
+      const tailEn = `${count("no_target_product")} without target product · ${notExposed} not exposed · ${count("excluded")} excluded (POS/draft)`;
       if (total < 5)
         return {
           status: "info",
@@ -327,8 +329,8 @@ async function coverageFor(experiment: Experiment, now: Date, since24h: Date): P
       label: bi("Atribusi order", "Order attribution"),
       lastSeenAt: null,
       figure: bi(
-        `${count("attributed")} beratribusi · ${count("not_exposed")} tidak terpapar · ${count("unattributed")} tanpa jejak · ${count("excluded")} dikecualikan (sejak start)`,
-        `${count("attributed")} attributed · ${count("not_exposed")} not exposed · ${count("unattributed")} without trace · ${count("excluded")} excluded (since start)`,
+        `${count("attributed")} beratribusi · ${count("no_target_product")} tanpa produk target · ${count("not_exposed")} tidak terpapar · ${count("unattributed")} tanpa jejak · ${count("excluded")} dikecualikan (sejak start)`,
+        `${count("attributed")} attributed · ${count("no_target_product")} without target product · ${count("not_exposed")} not exposed · ${count("unattributed")} without trace · ${count("excluded")} excluded (since start)`,
       ),
     },
     { source: "posthog", label: bi("Antrean PostHog", "PostHog queue"), lastSeenAt: null, figure: bi(`${backlog.pending} tertunda`, `${backlog.pending} pending`) },

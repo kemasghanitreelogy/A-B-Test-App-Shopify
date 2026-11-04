@@ -322,6 +322,58 @@ for (let i = 0; !VID_B || !VID_A; i++) {
     !r.log.fetches.some((f) => f.url.includes("/cart/update.js")));
 }
 
+/* ---------- 23b. Add-to-cart hanya dihitung kalau produk yang dites ikut masuk ----------
+
+   Di PDP yang dites ada tombol bundel, FBT, dan upsell yang menambahkan produk
+   LAIN. Keranjang tetap diberi variant (supaya order kapsul berikutnya terlacak),
+   tapi event add_to_cart hanya dikirim kalau produk target ada di jawaban
+   /cart/add.js — dan bukan sebagai baris hadiah otomatis.                      */
+{
+  const atcEvents = (r) => r.log.beacons
+    .flatMap((b) => { try { return JSON.parse(b.body).ev || []; } catch { return []; } })
+    .filter((e) => e.t === "add_to_cart");
+  const run = async (fetchBody) => {
+    const r = runScript({
+      config: baseConfig, ctx: { ...baseCtx, suffix: "ab-b" },
+      url: "https://treelogy.com/products/kapsul?view=ab-b", cookies: `_tl_vid=${VID_B}`, fetchBody,
+    });
+    await r.sandbox.fetch("/cart/add.js", { method: "POST" });
+    await new Promise((res) => setImmediate(res));
+    await new Promise((res) => setImmediate(res));
+    return r;
+  };
+
+  const own = await run(JSON.stringify({ id: 9, product_id: 123 }));
+  check("ATC produk target (jawaban satu item) dihitung", atcEvents(own).length === 1);
+
+  const multi = await run(JSON.stringify({ items: [{ product_id: 555, properties: { _Gifted: "1" } }, { product_id: 123 }] }));
+  check("ATC produk target bersama hadiah (jawaban items[]) dihitung", atcEvents(multi).length === 1);
+
+  const other = await run(JSON.stringify({ items: [{ product_id: 999 }] }));
+  check("ATC produk lain di PDP target TIDAK dihitung", atcEvents(other).length === 0);
+  check("ATC produk lain tetap memberi variant ke keranjang",
+    other.log.fetches.some((f) => f.url.includes("/cart/update.js")));
+
+  const giftOnly = await run(JSON.stringify({ items: [{ product_id: 123, properties: { _Gifted: "1" } }] }));
+  check("produk target sebagai baris hadiah TIDAK dihitung", atcEvents(giftOnly).length === 0);
+
+  const html = await run("<html>429</html>");
+  check("jawaban bukan JSON TIDAK dihitung", atcEvents(html).length === 0);
+
+  const formRun = (id) => {
+    const r = runScript({
+      config: baseConfig, ctx: { ...baseCtx, suffix: "ab-b", variantIds: [41, 42] },
+      url: "https://treelogy.com/products/kapsul?view=ab-b", cookies: `_tl_vid=${VID_B}`,
+    });
+    (r.log.listeners["submit"] ?? [])[0]?.({
+      target: { _fields: { id }, getAttribute: (n) => (n === "action" ? "/cart/add" : null) },
+    });
+    return r;
+  };
+  check("form native varian produk target dihitung", atcEvents(formRun("42")).length === 1);
+  check("form native varian produk lain TIDAK dihitung", atcEvents(formRun("77")).length === 0);
+}
+
 /* ---------- 24. Dua eksperimen sekaligus, halaman cocok ke salah satu ---------- */
 {
   const cfg = {

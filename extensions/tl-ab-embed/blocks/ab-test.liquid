@@ -22,6 +22,7 @@
       suffix: {{ template.suffix | default: '' | json }},
       handle: {{ product.handle | default: '' | json }},
       productId: {{ product.id | default: '' | json }},
+      variantIds: {% if product %}{{ product.variants | map: 'id' | json }}{% else %}[]{% endif %},
       designMode: {% if request.design_mode or request.visual_preview_mode %}true{% else %}false{% endif %},
       {%- comment -%}
         Varian komponen yang BENAR-BENAR dirender halaman ini: tema membaca

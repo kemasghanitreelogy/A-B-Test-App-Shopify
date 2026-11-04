@@ -27,6 +27,8 @@ export function runScript({
   sessionStorage: sessionStorageSeed = null,
   /** true = halaman punya elemen .mini-cart (eksperimen komponen cart drawer) */
   drawer = false,
+  /** isi jawaban /cart/add.js (teks JSON), untuk menguji saringan produk target */
+  fetchBody = "",
 } = {}) {
   const log = {
     beacons: [],
@@ -114,7 +116,11 @@ export function runScript({
       webdriver: false,
       sendBeacon: (endpoint, blob) => { log.beacons.push({ endpoint, body: blob.parts[0] }); return true; },
     },
-    fetch: (input, init) => { log.fetches.push({ url: String(input), init }); return Promise.resolve({ ok: true }); },
+    fetch: (input, init) => {
+      log.fetches.push({ url: String(input), init });
+      return Promise.resolve({ ok: true, clone: () => ({ text: () => Promise.resolve(fetchBody) }) });
+    },
+    FormData: class { constructor(form) { this.f = (form && form._fields) || {}; } get(k) { return k in this.f ? this.f[k] : null; } },
     crypto: { randomUUID: () => "uuid-tetap-untuk-pengujian" },
     MutationObserver: class {
       constructor(fn) { this.fn = fn; }
