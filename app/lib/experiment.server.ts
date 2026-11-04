@@ -54,7 +54,7 @@ function storefrontPostHog() {
 }
 
 /** Field yang tidak boleh diubah lagi setelah eksperimen mulai berjalan. */
-export const LOCKED_WHEN_RUNNING = ["primaryMetric", "mdeRelative", "splitPctB", "variantBSuffix", "targetType"] as const;
+export const LOCKED_WHEN_RUNNING = ["primaryMetric", "mdeRelative", "splitPctB", "variantBSuffix", "targetType", "conversionScope"] as const;
 
 interface CollectionProductsPage {
   nodes: Array<{ handle?: string }>;

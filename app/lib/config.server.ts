@@ -55,6 +55,11 @@ export interface StorefrontExperiment {
   t?: "c";
   c?: string;
   at?: string;
+  /**
+   * Penilaian add-to-cart: 1 = semua ATC di halaman yang dites dihitung.
+   * Tidak ada = hanya ATC yang memasukkan produk halaman itu (default).
+   */
+  m?: 1;
 }
 
 interface UserError {
@@ -97,6 +102,7 @@ export function buildStorefrontConfig(
           b: e.variantBSuffix,
           h: e.targetType === "all_products" ? ("*" as const) : e.targetHandles,
           x: e.excludeHandles,
+          ...(e.conversionScope === "all_products" ? { m: 1 as const } : {}),
         };
         const component = e.kind === "component" ? componentOf(e.component) : null;
         return component ? { ...base, h: [], t: "c", c: component.key, at: component.attribute } : base;

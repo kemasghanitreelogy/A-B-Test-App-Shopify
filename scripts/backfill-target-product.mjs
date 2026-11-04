@@ -24,7 +24,7 @@ const db = new PrismaClient();
 
 try {
   const experiment = await db.experiment.findUniqueOrThrow({ where: { id: experimentId } });
-  if (experiment.kind !== "template" || experiment.targetType === "all_products" || experiment.targetHandles.length === 0) {
+  if (experiment.kind !== "template" || experiment.targetType === "all_products" || experiment.targetHandles.length === 0 || experiment.conversionScope === "all_products") {
     console.log("eksperimen ini tidak dibatasi produk — tidak ada yang perlu disaring");
     process.exit(0);
   }

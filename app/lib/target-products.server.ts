@@ -11,13 +11,16 @@ import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
  * ini", bukan "orang yang membeli produk ini".
  *
  * Eksperimen all_products dan eksperimen komponen tidak disaring: keduanya
- * memang mengukur seluruh toko.
+ * memang mengukur seluruh toko. Eksperimen produk juga bisa memilih
+ * conversionScope = all_products kalau memang ingin mengukur seluruh belanja
+ * pengunjung yang terpapar.
  */
 
 interface TargetSpec {
   kind: string;
   targetType: string;
   targetHandles: string[];
+  conversionScope?: string | null;
 }
 
 export interface OrderLineItem {
@@ -27,7 +30,12 @@ export interface OrderLineItem {
 
 /** true kalau eksperimen ini hanya menghitung order yang memuat produk target. */
 export function isProductScoped(e: TargetSpec): boolean {
-  return e.kind === "template" && e.targetType !== "all_products" && e.targetHandles.length > 0;
+  return (
+    e.kind === "template" &&
+    e.targetType !== "all_products" &&
+    e.targetHandles.length > 0 &&
+    e.conversionScope !== "all_products"
+  );
 }
 
 const TARGET_PRODUCTS = `#graphql

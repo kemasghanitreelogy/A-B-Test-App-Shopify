@@ -332,9 +332,10 @@ for (let i = 0; !VID_B || !VID_A; i++) {
   const atcEvents = (r) => r.log.beacons
     .flatMap((b) => { try { return JSON.parse(b.body).ev || []; } catch { return []; } })
     .filter((e) => e.t === "add_to_cart");
-  const run = async (fetchBody) => {
+  const productCfg = { ...baseConfig, ex: [{ ...baseConfig.ex[0], h: ["kapsul"] }] };
+  const run = async (fetchBody, config = productCfg) => {
     const r = runScript({
-      config: baseConfig, ctx: { ...baseCtx, suffix: "ab-b" },
+      config, ctx: { ...baseCtx, suffix: "ab-b" },
       url: "https://treelogy.com/products/kapsul?view=ab-b", cookies: `_tl_vid=${VID_B}`, fetchBody,
     });
     await r.sandbox.fetch("/cart/add.js", { method: "POST" });
@@ -360,9 +361,9 @@ for (let i = 0; !VID_B || !VID_A; i++) {
   const html = await run("<html>429</html>");
   check("jawaban bukan JSON TIDAK dihitung", atcEvents(html).length === 0);
 
-  const formRun = (id) => {
+  const formRun = (id, config = productCfg) => {
     const r = runScript({
-      config: baseConfig, ctx: { ...baseCtx, suffix: "ab-b", variantIds: [41, 42] },
+      config, ctx: { ...baseCtx, suffix: "ab-b", variantIds: [41, 42] },
       url: "https://treelogy.com/products/kapsul?view=ab-b", cookies: `_tl_vid=${VID_B}`,
     });
     (r.log.listeners["submit"] ?? [])[0]?.({
@@ -372,6 +373,28 @@ for (let i = 0; !VID_B || !VID_A; i++) {
   };
   check("form native varian produk target dihitung", atcEvents(formRun("42")).length === 1);
   check("form native varian produk lain TIDAK dihitung", atcEvents(formRun("77")).length === 0);
+}
+
+/* ---------- 23c. Penilaian "semua produk" menghitung semua add-to-cart ---------- */
+{
+  const atcEvents = (r) => r.log.beacons
+    .flatMap((b) => { try { return JSON.parse(b.body).ev || []; } catch { return []; } })
+    .filter((e) => e.t === "add_to_cart");
+  const run = async (config) => {
+    const r = runScript({
+      config, ctx: { ...baseCtx, suffix: "ab-b" },
+      url: "https://treelogy.com/products/kapsul?view=ab-b", cookies: `_tl_vid=${VID_B}`,
+      fetchBody: JSON.stringify({ items: [{ product_id: 999 }] }),
+    });
+    await r.sandbox.fetch("/cart/add.js", { method: "POST" });
+    await new Promise((res) => setImmediate(res));
+    await new Promise((res) => setImmediate(res));
+    return r;
+  };
+  const allProducts = await run(baseConfig);
+  check("eksperimen semua produk (h = *) menghitung ATC produk lain", atcEvents(allProducts).length === 1);
+  const scopeAll = await run({ ...baseConfig, ex: [{ ...baseConfig.ex[0], h: ["kapsul"], m: 1 }] });
+  check("produk tertentu + penilaian semua produk (m = 1) menghitung ATC produk lain", atcEvents(scopeAll).length === 1);
 }
 
 /* ---------- 24. Dua eksperimen sekaligus, halaman cocok ke salah satu ---------- */

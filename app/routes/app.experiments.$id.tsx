@@ -96,6 +96,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
           ...(locked
             ? {}
             : {
+                conversionScope: ["target_products", "all_products"].includes(String(form.get("conversionScope")))
+                  ? String(form.get("conversionScope"))
+                  : experiment.conversionScope,
                 splitPctB: Math.min(95, Math.max(5, Number(form.get("splitPctB") ?? experiment.splitPctB))),
                 primaryMetric: String(form.get("primaryMetric") ?? experiment.primaryMetric),
                 mdeRelative: Number(form.get("mdeRelative") ?? experiment.mdeRelative),
@@ -190,6 +193,7 @@ export default function ExperimentDetail() {
     targetIds: experiment.targetIds.join(","),
     targetHandles: experiment.targetHandles.join("\n"),
     excludeHandles: experiment.excludeHandles.join("\n"),
+    conversionScope: experiment.conversionScope,
     splitPctB: String(experiment.splitPctB),
     primaryMetric: experiment.primaryMetric,
     mdeRelative: String(experiment.mdeRelative),
@@ -589,6 +593,16 @@ export default function ExperimentDetail() {
                 onInput={set("targetHandles")}
                 details="Used when the read_products scope is not approved yet, so the resource picker cannot run."
               />
+              <s-select
+                label="Orders & add-to-carts counted"
+                value={form.conversionScope}
+                onChange={set("conversionScope")}
+                details="Tested product only: orders without it, and add-to-carts of other products such as bundles or upsells, are not counted. All products: every order from a visitor who saw the tested page counts."
+                {...(running ? { disabled: true } : {})}
+              >
+                <s-option value="target_products">Only those containing a tested product</s-option>
+                <s-option value="all_products">All products, from exposed visitors</s-option>
+              </s-select>
             </>
           )}
 

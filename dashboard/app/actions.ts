@@ -120,6 +120,7 @@ export async function createExperimentAction(_prev: FormState, formData: FormDat
       targetType,
       targetHandles: splitList(formData.get("targetHandles")),
       excludeHandles: splitList(formData.get("excludeHandles")),
+      conversionScope: conversionScopeOf(formData.get("conversionScope"), "target_products"),
     },
   });
 
@@ -171,6 +172,7 @@ export async function updateExperimentAction(_prev: FormState, formData: FormDat
         ? {}
         : {
             targetType: String(formData.get("targetType") ?? experiment.targetType),
+            conversionScope: conversionScopeOf(formData.get("conversionScope"), experiment.conversionScope),
             splitPctB: clamp(Number(formData.get("splitPctB") ?? experiment.splitPctB), 5, 95),
             primaryMetric: String(formData.get("primaryMetric") ?? experiment.primaryMetric),
             mdeRelative: Number(formData.get("mdeRelative") ?? experiment.mdeRelative),
@@ -335,4 +337,10 @@ function splitList(value: FormDataEntryValue | null): string[] {
 
 export async function currentUser() {
   return requireUser();
+}
+
+/** Hanya dua nilai yang dikenali; selain itu (atau kosong) pakai nilai sebelumnya. */
+function conversionScopeOf(value: FormDataEntryValue | null, fallback: string): string {
+  const v = String(value ?? "");
+  return v === "all_products" || v === "target_products" ? v : fallback;
 }

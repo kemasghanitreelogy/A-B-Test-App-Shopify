@@ -26,6 +26,7 @@ export interface SerializedExperiment {
   targetType: string;
   targetHandles: string;
   excludeHandles: string;
+  conversionScope: string;
   splitPctB: string;
   primaryMetric: string;
   mdeRelative: string;
@@ -116,6 +117,31 @@ export function ExperimentSettings({
           />
         </div>
       </div>
+
+      {targetType !== "all_products" ? (
+        <div className="space-y-2">
+          <Label htmlFor="conversionScope">{t("Penilaian order & add-to-cart", "Orders & add-to-carts counted")}</Label>
+          <Select name="conversionScope" defaultValue={experiment.conversionScope} disabled={locked}>
+            <SelectTrigger id="conversionScope">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="target_products">
+                {t("Hanya yang memuat produk yang dites", "Only those containing a tested product")}
+              </SelectItem>
+              <SelectItem value="all_products">
+                {t("Semua produk, dari pengunjung yang terpapar", "All products, from exposed visitors")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Produk yang dites saja: order tanpa produk itu dan add-to-cart produk lain (bundel, upsell) tidak dihitung. Semua produk: setiap order pengunjung yang pernah melihat halaman yang dites ikut dihitung, berapa pun isinya.",
+              "Tested product only: orders without it and add-to-carts of other products (bundles, upsells) are not counted. All products: every order from a visitor who saw the tested page counts, whatever it contains.",
+            )}
+          </p>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="space-y-2">

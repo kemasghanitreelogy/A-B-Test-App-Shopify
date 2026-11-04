@@ -61,6 +61,11 @@ model Experiment {
   targetHandles  String[] @default([])
   /// handle produk yang dikecualikan
   excludeHandles String[] @default([])
+  /// Order & add-to-cart mana yang dihitung untuk eksperimen produk:
+  /// target_products = hanya yang memuat produk yang dites (default)
+  /// all_products    = semua order/ATC dari pengunjung yang terpapar
+  /// Tidak berlaku untuk cakupan all_products dan eksperimen komponen.
+  conversionScope String @default("target_products")
 
   /// null = templates/product.json (template default)
   variantASuffix   String?

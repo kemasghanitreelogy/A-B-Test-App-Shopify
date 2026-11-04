@@ -1006,7 +1006,15 @@
     return ids;
   }
 
+  /* Saringan hanya untuk eksperimen produk tertentu, sama seperti saringan
+     order di server. Eksperimen semua produk (h = "*"), atau yang memilih
+     "penilaian: semua produk" (m = 1), menghitung semua add-to-cart. */
+  function countsAllAddToCarts() {
+    return !!(experiment && (experiment.h === "*" || experiment.m === 1));
+  }
+
   function hasTargetProduct(ids) {
+    if (countsAllAddToCarts()) return true;
     return !!CTX.productId && ids.indexOf(String(CTX.productId)) !== -1;
   }
 
@@ -1081,7 +1089,7 @@
         // Form native tidak punya jawaban JSON; yang dikirim hanya id varian.
         var variantId = "";
         try { variantId = String(new FormData(form).get("id") || ""); } catch (err) {}
-        if (variantId && (CTX.variantIds || []).map(String).indexOf(variantId) !== -1) trackAddToCart();
+        if (countsAllAddToCarts() || (variantId && (CTX.variantIds || []).map(String).indexOf(variantId) !== -1)) trackAddToCart();
         trackComponentFunnel("add_to_cart");
       },
       true

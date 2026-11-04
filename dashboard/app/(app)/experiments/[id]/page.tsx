@@ -494,6 +494,7 @@ function serialize(e: {
   targetType: string;
   targetHandles: string[];
   excludeHandles: string[];
+  conversionScope: string;
   splitPctB: number;
   primaryMetric: string;
   mdeRelative: number;
@@ -505,6 +506,7 @@ function serialize(e: {
     targetType: e.targetType,
     targetHandles: e.targetHandles.join("\n"),
     excludeHandles: e.excludeHandles.join("\n"),
+    conversionScope: e.conversionScope,
     splitPctB: String(e.splitPctB),
     primaryMetric: e.primaryMetric,
     mdeRelative: String(e.mdeRelative),
