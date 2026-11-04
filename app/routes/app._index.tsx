@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData, useNavigate, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { sampleSizePerArm } from "../lib/stats";
@@ -59,6 +60,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const mde = Number(form.get("mdeRelative") ?? 0.2);
   const baseline = Number(form.get("baselineCvr") ?? 0.02);
 
+  const targetTypeRaw = String(form.get("targetType") ?? "all_products");
+  const targetType = ["all_products", "products", "collections"].includes(targetTypeRaw) ? targetTypeRaw : "all_products";
+  const targetIds = String(form.get("targetIds") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const targetHandles = String(form.get("targetHandles") ?? "").split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+  if (targetType !== "all_products" && targetIds.length === 0 && targetHandles.length === 0) {
+    return { error: "Choose the products or collections in the test, or enter their handles." };
+  }
+  const conversionScope = String(form.get("conversionScope")) === "all_products" ? "all_products" : "target_products";
+
   const experiment = await db.experiment.create({
     data: {
       shop: session.shop,
@@ -69,6 +79,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       primaryMetric: String(form.get("primaryMetric") ?? "cvr"),
       mdeRelative: mde,
       minSampleArm: sampleSizePerArm(baseline, mde),
+      targetType,
+      targetIds: targetType === "all_products" ? [] : targetIds,
+      targetHandles: targetType === "all_products" ? [] : targetHandles,
+      conversionScope,
     },
   });
 
@@ -96,6 +110,7 @@ export default function Index() {
   const { experiments } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const navigate = useNavigate();
+  const shopify = useAppBridge();
   const [showForm, setShowForm] = useState(false);
 
   const [form, setForm] = useState({
@@ -106,7 +121,18 @@ export default function Index() {
     primaryMetric: "cvr",
     mdeRelative: "0.2",
     baselineCvr: "0.02",
+    targetType: "all_products",
+    targetIds: "",
+    targetHandles: "",
+    conversionScope: "target_products",
   });
+
+  async function pickResources() {
+    const type = form.targetType === "collections" ? "collection" : "product";
+    const selection = await shopify.resourcePicker({ type, multiple: true });
+    if (!selection) return;
+    setForm((f) => ({ ...f, targetIds: selection.map((s) => s.id).join(",") }));
+  }
 
   const set = (key: keyof typeof form) => (e: FieldEvent) =>
     setForm((f) => ({ ...f, [key]: fieldValue(e) }));
@@ -145,6 +171,40 @@ export default function Index() {
               onInput={set("variantBSuffix")}
               details="Created as templates/product.<suffix>.json on the live theme."
             />
+            <s-select label="Scope (which product pages are tested)" value={form.targetType} onChange={set("targetType")}>
+              <s-option value="all_products">All products</s-option>
+              <s-option value="products">Specific products</s-option>
+              <s-option value="collections">Specific collections</s-option>
+            </s-select>
+
+            {form.targetType !== "all_products" && (
+              <>
+                <s-stack direction="inline" gap="base">
+                  <s-button onClick={pickResources}>
+                    Choose {form.targetType === "collections" ? "collections" : "products"}
+                  </s-button>
+                  <s-text tone="neutral">
+                    {form.targetIds ? `${form.targetIds.split(",").filter(Boolean).length} selected` : "none yet"}
+                  </s-text>
+                </s-stack>
+                <s-text-area
+                  label="Or enter product handles manually (one per line)"
+                  value={form.targetHandles}
+                  onInput={set("targetHandles")}
+                  placeholder="organic-moringa-capsules"
+                />
+                <s-select
+                  label="Orders & add-to-carts counted"
+                  value={form.conversionScope}
+                  onChange={set("conversionScope")}
+                  details="Tested product only: orders without it, and add-to-carts of other products such as bundles or upsells, are not counted. All products: every order from a visitor who saw the tested page counts, whatever it contains. Locked once the experiment starts."
+                >
+                  <s-option value="target_products">Only those containing a tested product</s-option>
+                  <s-option value="all_products">All products, from exposed visitors</s-option>
+                </s-select>
+              </>
+            )}
+
             <s-number-field
               label="Traffic to variant B (%)"
               value={form.splitPctB}
