@@ -173,8 +173,9 @@ App embed juga memuat **posthog-js** di storefront (identitas = `_tl_vid`, setia
 event membawa `$feature/<flag>` = variant) sehingga session replay, scroll depth,
 rage click, klik link/tombol, dan web vitals bisa dibaca **per variant** di halaman
 **Audit lengkap** dashboard (`/experiments/<id>/audit`). Autocapture hanya mencatat
-klik pada `<a>` dan `<button>`; heatmap dan dead click dimatikan di klien sehingga
-setelan project PostHog tidak bisa menyalakannya. Replay merekam sampel sesi
+klik pada `<a>` dan `<button>`; heatmap (titik klik, gerak, rage di semua elemen)
+dinyalakan di klien, dead click dimatikan sehingga setelan project PostHog tidak
+bisa menyalakannya. Replay merekam sampel sesi
 (`POSTHOG_STOREFRONT_REPLAY_SAMPLE`, 0–1, default `0.2`). Matikan semuanya dengan
 `POSTHOG_STOREFRONT=0`, replay saja dengan `POSTHOG_STOREFRONT_REPLAY=0`.
 

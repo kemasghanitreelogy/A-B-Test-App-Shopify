@@ -218,9 +218,12 @@ App embed memuat posthog-js sendiri (bukan snippet manual di theme), dari
   dengan `maskAllInputs` (`POSTHOG_STOREFRONT_REPLAY`) dan
   `session_recording.sampleRate` dari config (`rs`, default 0.2). Nilai klien
   mengalahkan sampling di project settings.
-- `capture_dead_clicks: false` dan `capture_heatmaps: false` eksplisit, supaya
-  remote config project tidak menyalakannya. (Diubah 2026-10-16: sebelumnya
-  dead click dan heatmap aktif, autocapture tanpa filter, replay tanpa sampling.)
+- `capture_dead_clicks: false` eksplisit, supaya remote config project tidak
+  menyalakannya. (Diubah 2026-10-16: sebelumnya dead click dan heatmap aktif,
+  autocapture tanpa filter, replay tanpa sampling.)
+- `capture_heatmaps: true` (dinyalakan lagi 2026-11-05): titik klik/gerak/rage
+  di semua elemen. Autocapture saja melewatkan tombol yang menghentikan event
+  klik (ATC), sehingga heatmap klik per variant tidak bisa dibuat.
 
 ### 9.2 Bridge baru
 

@@ -474,10 +474,14 @@
         dom_event_allowlist: ["click"],
         element_allowlist: ["a", "button"]
       },
-      /* Dimatikan eksplisit supaya setelan project di PostHog tidak bisa
-         menyalakannya kembali lewat remote config. */
+      /* Dead click dimatikan eksplisit supaya setelan project di PostHog tidak
+         bisa menyalakannya kembali lewat remote config. */
       capture_dead_clicks: false,
-      capture_heatmaps: false,
+      /* Heatmap dinyalakan: mencatat titik setiap klik, gerak, dan rage click
+         di elemen apa pun, tidak dibatasi allowlist autocapture di atas. Tanpa
+         ini tombol yang menghentikan event klik (mis. ATC) tidak pernah
+         terlihat, dan heatmap klik per variant tidak bisa dibuat. */
+      capture_heatmaps: true,
       disable_session_recording: cfg.r !== 1,
       capture_performance: { web_vitals: true },
       /* Config lama di metafield belum membawa `rs`; sampai diterbitkan ulang,
